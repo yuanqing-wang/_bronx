@@ -1,2 +1,2 @@
-# bronx
+# BRNX
 Bayesian Rewiring Networks
