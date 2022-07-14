@@ -8,12 +8,18 @@ def run(args):
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.add_self_loop(g)
     a = g.adj()
-    model = VGAE(g.ndata['feat'].shape[-1], 32, 16)
-    optimizer = torch.optim.Adam(model.parameters(), 1e-3)
     h = g.ndata['feat']
+    model = VGAE(g.ndata['feat'].shape[-1], 32, 16)
+    
+    if torch.cuda.is_available():
+        a = a.cuda()
+        h = h.cuda()
+        model = model.cuda()
+
+    optimizer = torch.optim.Adam(model.parameters(), 1e-3)
 
     import tqdm
-    for _ in range(1000):
+    for _ in range(10000):
         model.train()
         optimizer.zero_grad()
         loss = model.loss(a, h)
