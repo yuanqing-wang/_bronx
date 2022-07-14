@@ -1,2 +1,2 @@
-# BRNX
-Bayesian Rewiring Networks
+# bronx
+Bayesian Rewiring of Node Networks

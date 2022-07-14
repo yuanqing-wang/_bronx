@@ -1,7 +1,7 @@
 import torch
 import dgl
-from brnx.layers import VGAE
-from brnx.utils import EarlyStopping
+from bronx.layers import VGAE
+from bronx.utils import EarlyStopping
 
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset

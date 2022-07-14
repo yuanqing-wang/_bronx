@@ -1,7 +1,7 @@
 import torch
 import dgl
-from brnx.layers import GCN
-from brnx.utils import EarlyStopping
+from bronx.layers import GCN
+from bronx.utils import EarlyStopping
 
 class Model(torch.nn.Module):
     def __init__(self, in_features):
