@@ -9,7 +9,7 @@ def run(args):
     g = dgl.add_self_loop(g)
     a = g.adj()
     model = VGAE(g.ndata['feat'].shape[-1], 32, 16)
-    optimizer = torch.optim.Adam(model.parameters(), 1e-2)
+    optimizer = torch.optim.Adam(model.parameters(), 1e-3)
     h = g.ndata['feat']
 
     import tqdm
