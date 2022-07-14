@@ -65,7 +65,6 @@ class VGAE(torch.nn.Module):
         q_z = self.encode(a, h)
         p_a = self.decode(q_z)
         p_a = p_a.logits
-        print(p_a.sigmoid())
         loss = torch.nn.BCEWithLogitsLoss()(
             p_a, a.to_dense(),
         )
