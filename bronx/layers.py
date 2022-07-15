@@ -69,7 +69,7 @@ class VGAE(torch.nn.Module):
 
         pos_weight = (a.shape[0] * a.shape[0] - _sum(a)) / _sum(a)
 
-        nll = torch.nn.BCEWithLogitsLoss(
+        loss = torch.nn.BCEWithLogitsLoss(
             pos_weight=pos_weight,
         )(
             p_a.flatten(),
