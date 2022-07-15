@@ -52,7 +52,8 @@ class VGAE(torch.nn.Module):
 
     def decode(self, q_z):
         z = q_z.rsample()
-        z = z @ z.transpose(0, 1)
+        # z = q_z.mean
+        z = z @ z.transpose(1, 0)
         p_a = torch.distributions.Bernoulli(logits=z)
         return p_a
 
@@ -65,7 +66,15 @@ class VGAE(torch.nn.Module):
         q_z = self.encode(a, h)
         p_a = self.decode(q_z)
         p_a = p_a.logits
-        loss = torch.nn.BCEWithLogitsLoss()(
-            p_a, a.to_dense(),
+
+        pos_weight = (a.shape[0] * a.shape[0] - _sum(a)) / _sum(a)
+
+        nll = torch.nn.BCEWithLogitsLoss(
+            pos_weight=pos_weight,
+        )(
+            p_a.flatten(),
+            a.to_dense().flatten(),
         )
+
+
         return loss

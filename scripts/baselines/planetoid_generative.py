@@ -1,5 +1,6 @@
 import torch
 import dgl
+from sklearn.metrics import average_precision_score
 from bronx.layers import VGAE
 from bronx.utils import EarlyStopping
 
@@ -10,7 +11,7 @@ def run(args):
     a = g.adj()
     h = g.ndata['feat']
     model = VGAE(g.ndata['feat'].shape[-1], 32, 16)
-    
+
     if torch.cuda.is_available():
         a = a.cuda()
         h = h.cuda()
@@ -27,10 +28,12 @@ def run(args):
         optimizer.step()
 
         with torch.no_grad():
+            model.eval()
             p_a = model(a, h)
-            a_hat = p_a.sample()
-            accuracy = (a_hat == a.to_dense()).sum() / a_hat.numel()
-            print(accuracy)
+            a_hat = (p_a.probs > 0.5) * 1
+
+            ap = average_precision_score(a_hat.flatten(), a.to_dense().flatten())
+            print(ap)
 
 if __name__ == "__main__":
     import argparse
