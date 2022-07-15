@@ -32,7 +32,7 @@ def run(args):
             p_a = model(a, h)
             a_hat = (p_a.probs > 0.5) * 1
 
-            ap = average_precision_score(a_hat.flatten(), a.to_dense().flatten())
+            ap = average_precision_score(a_hat.flatten().cpu(), a.to_dense().flatten().cpu())
             print(ap)
 
 if __name__ == "__main__":
