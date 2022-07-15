@@ -30,10 +30,13 @@ def run(args):
         with torch.no_grad():
             model.eval()
             p_a = model(a, h)
-            a_hat = (p_a.probs > 0.5) * 1
+            a_hat = (p_a.logits.sigmoid() > 0.5) * 1
 
-            ap = average_precision_score(a_hat.flatten().cpu(), a.to_dense().flatten().cpu())
-            print(ap)
+            accuracy = (a_hat.flatten() == a.to_dense().flatten()).sum() / a_hat.numel()
+            print(accuracy)
+
+            # ap = average_precision_score(a_hat.flatten().cpu(), a.to_dense().flatten().cpu())
+            # print(ap)
 
 if __name__ == "__main__":
     import argparse

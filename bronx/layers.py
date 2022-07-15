@@ -75,6 +75,6 @@ class VGAE(torch.nn.Module):
             a.to_dense().flatten(),
         )
 
-        kl_divergence = 0.5 * torch.distributions.kl_divergence(q_z, self.p_z).sum(-1).mean() / p_a.shape[0]
-        loss = scaling * nll_loss + kl_divergence
+        kl_divergence = torch.distributions.kl_divergence(q_z, self.p_z).sum(-1).mean() / p_a.shape[0]
+        loss = nll_loss + kl_divergence
         return loss
