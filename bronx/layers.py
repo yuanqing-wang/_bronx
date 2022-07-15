@@ -1,7 +1,6 @@
 from typing import Optional, Callable
 import torch
 
-
 def _sum(x, *args, **kwargs):
     if x.is_sparse:
         return torch.sparse.sum(x, *args, **kwargs)
@@ -52,7 +51,6 @@ class VGAE(torch.nn.Module):
 
     def decode(self, q_z):
         z = q_z.rsample()
-        # z = q_z.mean
         z = z @ z.transpose(1, 0)
         p_a = torch.distributions.Bernoulli(logits=z)
         return p_a
@@ -68,7 +66,7 @@ class VGAE(torch.nn.Module):
         p_a = p_a.logits
 
         pos_weight = (a.shape[0] * a.shape[0] - _sum(a)) / _sum(a)
-        scaling = a.shape[0] * a.shape[0] / float((a.shape[0] * a.shape[0] - _sum(a)) * 2)
+        # scaling = a.shape[0] * a.shape[0] / float((a.shape[0] * a.shape[0] - _sum(a)) * 2)
 
         nll_loss = torch.nn.BCEWithLogitsLoss(
             pos_weight=pos_weight,
@@ -78,5 +76,5 @@ class VGAE(torch.nn.Module):
         )
 
         kl_divergence = torch.distributions.kl_divergence(q_z, self.p_z).sum(-1).mean() / p_a.shape[0]
-        loss = scaling * nll_loss + kl_divergence
+        loss = nll_loss + kl_divergence
         return loss
