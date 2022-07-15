@@ -17,7 +17,7 @@ def run(args):
         h = h.cuda()
         model = model.cuda()
 
-    optimizer = torch.optim.Adam(model.parameters(), 1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), 1e-2)
 
     import tqdm
     for _ in range(10000):
