@@ -1,63 +1,123 @@
-import torch
-import dgl
+from functools import partial
+import jax
+import jax.numpy as jnp
+from flax import linen as nn
+import galax
+import optax
 from bronx.layers import GCN
 from bronx.utils import EarlyStopping
 
-class Model(torch.nn.Module):
-    def __init__(self, in_features):
-        super().__init__()
-        self.layer0 = GCN(in_features, 16, activation=torch.nn.ReLU())
-        self.layer1 = GCN(16, 7)
-        self.dropout0 = torch.nn.Dropout(0.5)
-        self.dropout1 = torch.nn.Dropout(0.5)
 
-    def forward(self, a, h):
+class Model(nn.Module):
+    features: int
+    deterministic: bool = False
+
+    def setup(self):
+        self.dropout0 = nn.Dropout(0.5, deterministic=self.deterministic)
+        self.dropout1 = nn.Dropout(0.5, deterministic=self.deterministic)
+        self.gcn0 = GCN(16, activation=jax.nn.relu)
+        self.gcn1 = GCN(self.features)
+
+    def __call__(self, a, h):
         h = self.dropout0(h)
-        h = self.layer0(a, h)
+        h = self.gcn0(a, h)
         h = self.dropout1(h)
-        h = self.layer1(a, h)
+        h = self.gcn1(a, h)
         return h
 
 def run(args):
-    from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
-    g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
-    g = dgl.add_self_loop(g)
+    from galax.data.datasets.nodes.planetoid import cora, citeseer, pubmed
+    g = locals()[args.data.lower()]()
+    g = g.add_self_loop()
     a = g.adj()
+    h = g.ndata['h']
+    features = g.ndata['label'].max() + 1
+    y_ref = jax.nn.one_hot(g.ndata['label'], features)
 
-    model = Model(g.ndata['feat'].shape[-1])
-    optimizer = torch.optim.Adam(
-        [
-            {"params": model.layer0.parameters(), "lr": 1e-2, "weight_decay": 5e-4},
-            {"params": model.layer1.parameters(), "lr": 1e-2, "weight_decay": 0.0},
-        ]
+    model = Model(features, deterministic=False)
+    model_eval = Model(features, deterministic=True)
+
+    key = jax.random.PRNGKey(2666)
+    key, key_dropout = jax.random.split(key)
+
+    params = model.init({"params": key, "dropout": key_dropout}, a, h)
+
+    from flax.core import FrozenDict
+    mask = FrozenDict(
+        {"params":
+            {
+                "gcn0": True,
+                "gcn1": False,
+            },
+        },
     )
+
+    optimizer = optax.chain(
+        optax.additive_weight_decay(5e-4, mask=mask),
+        optax.adam(1e-2),
+    )
+
+    from flax.training.train_state import TrainState
+    state = TrainState.create(
+        apply_fn=model.apply, params=params, tx=optimizer,
+    )
+
+    def loss(params, key):
+        y = model.apply(params, a, h, rngs={"dropout": key})
+        return optax.softmax_cross_entropy(
+            y[g.ndata["train_mask"]],
+            y_ref[g.ndata["train_mask"]],
+        ).mean()
+
+    # @jax.jit
+    def step(state, key):
+        key, new_key = jax.random.split(key)
+        grad_fn = jax.grad(partial(loss, key=new_key))
+        grads = grad_fn(state.params)
+        state = state.apply_gradients(grads=grads)
+        return state, key
+
+    @jax.jit
+    def eval(state):
+        params = state.params
+        y = model_eval.apply(params, a, h)
+        accuracy_vl = (y_ref[g.ndata['val_mask']].argmax(-1) ==
+                y[g.ndata['val_mask']].argmax(-1)).sum() /\
+                g.ndata['val_mask'].sum()
+        loss_vl = optax.softmax_cross_entropy(
+            y[g.ndata['val_mask']],
+            y_ref[g.ndata['val_mask']],
+        ).mean()
+        return accuracy_vl, loss_vl
+
+    @jax.jit
+    def test(state):
+        params = state.params
+        y = model_eval.apply(params, a, h)
+        accuracy_te = (y_ref[g.ndata['test_mask']].argmax(-1) ==
+            y[g.ndata['test_mask']].argmax(-1)).sum() /\
+            g.ndata['test_mask'].sum()
+        loss_te = optax.softmax_cross_entropy(
+            y[g.ndata['test_mask']],
+            y_ref[g.ndata['test_mask']],
+        ).mean()
+        return accuracy_te, loss_te
+
+    from galax.nn.utils import EarlyStopping
     early_stopping = EarlyStopping(10)
 
     import tqdm
-    for _ in tqdm.tqdm(range(500)):
-        model.train()
-        optimizer.zero_grad()
-        y_hat = model(a, g.ndata['feat'])[g.ndata['train_mask']]
-        y = g.ndata['label'][g.ndata['train_mask']]
-        loss = torch.nn.CrossEntropyLoss()(y_hat, y)
-        loss.backward()
-        optimizer.step()
-        model.eval()
+    for _ in tqdm.tqdm(range(1000)):
+        state, key = step(state, key)
+        accuracy_vl, loss_vl = eval(state)
+        if early_stopping((-accuracy_vl, loss_vl), state.params):
+            state = state.replace(params=early_stopping.params)
+            break
 
-        with torch.no_grad():
-            y_hat = model(a, g.ndata["feat"])[g.ndata["val_mask"]]
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-            if early_stopping([loss, -accuracy], model) is True:
-                model.load_state_dict(early_stopping.best_state)
-                break
+    accuracy_te, _ = test(state)
+    print(accuracy_te)
 
-    model.eval()
-    with torch.no_grad():
-        y_hat = model(a, g.ndata["feat"])[g.ndata["test_mask"]]
-        y = g.ndata["label"][g.ndata["test_mask"]]
-        accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-        print(accuracy)
+
 
 if __name__ == "__main__":
     import argparse

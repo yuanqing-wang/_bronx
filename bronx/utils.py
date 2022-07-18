@@ -1,21 +1,38 @@
 class EarlyStopping(object):
+    """Early stopping.
+
+    Parameters
+    ----------
+    patience : int = 10
+        Patience for early stopping.
+
+    """
+
     best_losses = None
-    best_state = None
+    params = None
     counter = 0
 
-    def __init__(self, patience=10):
+    def __init__(self, patience: int = 10):
         self.patience = patience
 
-    def __call__(self, losses, model):
+    def __call__(self, losses, params):
         if self.best_losses is None:
             self.best_losses = losses
             self.counter = 0
 
-        elif any(loss <= best_loss for loss, best_loss in zip(losses, self.best_losses)):
-            if all(loss <= best_loss for loss, best_loss in zip(losses, self.best_losses)):
-                import copy
-                self.best_state = copy.deepcopy(model.state_dict())
-            self.best_losses = [min(loss, best_loss) for loss, best_loss in zip(losses, self.best_losses)]
+        elif any(
+            loss <= best_loss
+            for loss, best_loss in zip(losses, self.best_losses)
+        ):
+            if all(
+                loss <= best_loss
+                for loss, best_loss in zip(losses, self.best_losses)
+            ):
+                self.params = params
+            self.best_losses = [
+                min(loss, best_loss)
+                for loss, best_loss in zip(losses, self.best_losses)
+            ]
             self.counter = 0
 
         else:
