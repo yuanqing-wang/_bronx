@@ -1,3 +1,6 @@
+import jax
+import jax.numpy as jnp
+
 class EarlyStopping(object):
     """Early stopping.
 
@@ -41,3 +44,9 @@ class EarlyStopping(object):
                 return True
 
         return False
+
+def weighted_cross_entropy_with_logits(labels, logits, pos_weight):
+    log_weight = 1 + (pos_weight - 1) * labels
+    return (1 - labels) * logits \
+    + log_weight * (jnp.log1p(jnp.exp(-jnp.abs(logits))) \
+    + jax.nn.relu(-logits))  # pylint: disable=invalid-unary-operand-type

@@ -32,15 +32,21 @@ class ProjectedTruncatedExponential(tfd.TransformedDistribution):
 class SoftBernoulli(tfd.MixtureSameFamily):
     def __init__(self, rate0, rate1, alpha):
         parameters = dict(locals())
+
+        left = (1.0 - alpha) * (rate0 / (1.0 - jnp.exp(-rate0)))
+        right = alpha * (rate1 / (1.0 - jnp.exp(-rate1)))
+
         rate = jnp.stack((rate0, rate1))
-        scale = jnp.array((1.0, -1.0))
-        shift = jnp.array((0.0, 1.0))
+        scale = jnp.array((1.0, -1.0)).reshape((2,) + (len(rate.shape) - 1) * (1, ))
+        shift = jnp.array((0.0, 1.0)).reshape((2,) + (len(rate.shape) - 1) * (1, ))
+
         components_distribution = ProjectedTruncatedExponential(
             rate=rate, scale=scale, shift=shift,
         )
         mixture_distribution = tfd.Categorical(
-            probs=jnp.stack((1.0-alpha, alpha)),
+            probs=jnp.stack((left, right)),
         )
+        
         super().__init__(
             mixture_distribution=mixture_distribution,
             components_distribution=components_distribution,
