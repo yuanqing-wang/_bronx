@@ -45,8 +45,7 @@ class EarlyStopping(object):
 
         return False
 
-def weighted_cross_entropy_with_logits(labels, logits, pos_weight):
-    log_weight = 1 + (pos_weight - 1) * labels
-    return (1 - labels) * logits \
-    + log_weight * (jnp.log1p(jnp.exp(-jnp.abs(logits))) \
-    + jax.nn.relu(-logits))  # pylint: disable=invalid-unary-operand-type
+def weighted_cross_entropy_with_logits(labels, logits, pos_weight=1.0):
+    max_val = jnp.clip(-logits, 0, None)
+    loss = logits - logits * labels + max_val + jnp.log(jnp.exp(-max_val) + jnp.exp((-logits - max_val)))
+    return loss
