@@ -20,7 +20,7 @@ class GCN(nn.Module):
         h = nn.Dense(
             self.features,
             use_bias=False,
-            # kernel_init=jax.nn.initializers.glorot_uniform()
+            kernel_init=jax.nn.initializers.glorot_uniform()
         )(h)
         h = a @ h
         h = h * norm
@@ -57,7 +57,7 @@ class GraphAutoEncoder(nn.Module):
         loss = weighted_cross_entropy_with_logits(
             labels=a.todense(),
             logits=a_hat,
-            # pos_weight=pos_weight,
+            pos_weight=pos_weight,
         )
 
         loss = norm * loss

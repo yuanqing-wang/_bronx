@@ -41,6 +41,7 @@ def run():
     def eval(state):
         a_hat = model.apply(state.params, a, h)
         a_hat = jax.nn.sigmoid(a_hat)
+        print(a_hat)
 
     import tqdm
     for idx in tqdm.tqdm(range(1000)):
