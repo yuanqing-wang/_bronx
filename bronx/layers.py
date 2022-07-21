@@ -85,6 +85,34 @@ class BVGAE(torch.nn.Module):
         mll = beta1.log_prob(torch.tensor(1.0 - self.epsilon)) + beta0.log_prob(torch.tensor(self.epsilon))
         return -mll.mean()
 
+class GAE(torch.nn.Module):
+    def __init__(self, in_features, hidden_features, out_features):
+        super().__init__()
+        self.gcn0 = GCN(in_features, hidden_features, activation=torch.nn.ReLU())
+        self.gcn1 = GCN(hidden_features, out_features)
+
+    def encode(self, a, h):
+        h = self.gcn0(a, h)
+        h = self.gcn1(a, h)
+        return h
+
+    def forward(self, a, h):
+        h = self.encode(a, h)
+        a_hat = h @ h.t()
+        return a_hat
+
+    def loss(self, a, h):
+        h = self.encode(a, h)
+        a_hat = h @ h.t()
+        a = a.to_dense()
+        pos_weight = (a.shape[0] * a.shape[0] - a.sum()) / a.sum()
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            input=a_hat,
+            target=a,
+            pos_weight=pos_weight,
+        )
+        return loss
+
 class VGAE(torch.nn.Module):
     def __init__(
         self,

@@ -1,7 +1,7 @@
 import torch
 import dgl
 from sklearn.metrics import average_precision_score
-from bronx.layers import VGAE
+from bronx.layers import GAE
 from bronx.utils import EarlyStopping
 
 def run(args):
@@ -10,7 +10,8 @@ def run(args):
     g = dgl.add_self_loop(g)
     a = g.adj()
     h = g.ndata['feat']
-    model = VGAE(g.ndata['feat'].shape[-1], 32, 16)
+    h = 1.0 * (h > 0.0)
+    model = GAE(g.ndata['feat'].shape[-1], 32, 16)
 
     if torch.cuda.is_available():
         a = a.cuda()
@@ -20,23 +21,23 @@ def run(args):
     optimizer = torch.optim.Adam(model.parameters(), 1e-2)
 
     import tqdm
-    for _ in range(10000):
+    for idx_range in range(10000):
         model.train()
         optimizer.zero_grad()
         loss = model.loss(a, h)
         loss.backward()
         optimizer.step()
 
-        with torch.no_grad():
-            model.eval()
-            p_a = model(a, h)
-            a_hat = (p_a.logits.sigmoid() > 0.5) * 1
+        if idx_range % 100 == 0:
+            with torch.no_grad():
+                model.eval()
+                a_hat = model(a, h)
+                # a_hat = 1.0 * (a_hat > 0.5)
+                # accuracy = (a_hat.flatten() == a.to_dense().flatten()).sum() / a_hat.numel()
+                # print(accuracy)
 
-            accuracy = (a_hat.flatten() == a.to_dense().flatten()).sum() / a_hat.numel()
-            print(accuracy)
-
-            # ap = average_precision_score(a_hat.flatten().cpu(), a.to_dense().flatten().cpu())
-            # print(ap)
+                ap = average_precision_score(a.to_dense().flatten().cpu(), a_hat.flatten().cpu())
+                print(ap)
 
 if __name__ == "__main__":
     import argparse
