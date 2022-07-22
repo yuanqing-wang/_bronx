@@ -71,8 +71,8 @@ class SoftBernoulliGraphVariationalAutoencoder(nn.Module):
         self.gcn0 = GCN(self.features)
         self.gcn1 = GCN(self.features)
         self.fc_rate0 = nn.Dense(self.features, use_bias=False)
-        self.fc_rate1 = nn.Dense(self.features, use_bias=False)
-        self.fc_alpha = nn.Dense(self.features, use_bias=False)
+        self.fc_rate1 = nn.Dense(1, use_bias=False)
+        self.fc_alpha = nn.Dense(1, use_bias=False)
 
     def parameterize(self, a, h):
         h = self.gcn0(a, h)
@@ -83,8 +83,8 @@ class SoftBernoulliGraphVariationalAutoencoder(nn.Module):
     def encode(self, a, h):
         rate0, rate1, alpha = self.parameterize(a, h)
         rate0 = (rate0 @ rate0.transpose()) / rate0.shape[-1]
-        rate1 = (rate1 @ rate1.transpose()) / rate1.shape[-1]
-        alpha = (alpha @ alpha.transpose()) / alpha.shape[-1]
+        rate1 = (jnp.expand_dims(rate1, 0) + jnp.expand_dims(rate1, 1)).squeeze(-1)
+        alpha = (jnp.expand_dims(rate0, 0) + jnp.expand_dims(rate0, 1)).squeeze(-1)
         q_z = SoftBernoulli(rate0, rate1, alpha)
         return q_z
 
@@ -97,16 +97,16 @@ class SoftBernoulliGraphVariationalAutoencoder(nn.Module):
 
         idxs = a.indices
         src_real, dst_real = idxs[:, 0], idxs[:, 1]
-        rate0_real = jnp.exp((rate0[src_real] * rate0[dst_real]).sum(-1) / rate0.shape[-1] ** 0.5)
-        rate1_real = jnp.exp((rate1[src_real] * rate1[dst_real]).sum(-1) / rate1.shape[-1] ** 0.5)
+        rate0_real = jnp.exp((rate0[src_real] + rate0[dst_real]).sum(-1))
+        rate1_real = jnp.exp((rate1[src_real] + rate1[dst_real]).sum(-1))
         alpha_real = jax.nn.sigmoid((alpha[src_real] * alpha[dst_real]).sum(-1) / alpha.shape[-1] ** 0.5)
         q_z_real = SoftBernoulli(rate0_real, rate1_real, alpha_real)
 
         key_src, key_dst = jax.random.split(key)
         src_fake = jax.random.randint(key_src, src_real.shape, 0, len(src_real))
         dst_fake = jax.random.randint(key_dst, dst_real.shape, 0, len(dst_real))
-        rate0_fake = jnp.exp((rate0[src_fake] * rate1[dst_fake]).sum(-1) / rate0.shape[-1] ** 0.5)
-        rate1_fake = jnp.exp((rate1[src_fake] * rate1[dst_fake]).sum(-1) / rate1.shape[-1] ** 0.5)
+        rate0_fake = jnp.exp((rate0[src_fake] + rate1[dst_fake]).sum(-1))
+        rate1_fake = jnp.exp((rate1[src_fake] + rate1[dst_fake]).sum(-1))
         alpha_fake = jax.nn.sigmoid((alpha[src_real] * alpha[dst_fake]).sum(-1) / alpha.shape[-1])
         q_z_fake = SoftBernoulli(rate0_fake, rate0_fake, alpha_fake)
 

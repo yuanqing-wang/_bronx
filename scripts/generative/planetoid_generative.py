@@ -45,20 +45,20 @@ def run():
         )
         idxs = a.indices
         src_real, dst_real = idxs[:, 0], idxs[:, 1]
-        rate0_real = jnp.exp((rate0[src_real] * rate0[dst_real]).sum(-1) / rate0.shape[-1] ** 0.5)
-        rate1_real = jnp.exp((rate1[src_real] * rate1[dst_real]).sum(-1) / rate1.shape[-1] ** 0.5)
+        rate0_real = jnp.exp((rate0[src_real] + rate0[dst_real]).sum(-1))
+        rate1_real = jnp.exp((rate1[src_real] + rate1[dst_real]).sum(-1))
         alpha_real = jax.nn.sigmoid((alpha[src_real] * alpha[dst_real]).sum(-1) / alpha.shape[-1] ** 0.5)
         # q_z_real = SoftBernoulli(rate0_real, rate1_real, alpha_real)
 
         key_src, key_dst = jax.random.split(key)
         src_fake = jax.random.randint(key_src, src_real.shape, 0, len(src_real))
         dst_fake = jax.random.randint(key_dst, dst_real.shape, 0, len(dst_real))
-        rate0_fake = jnp.exp((rate0[src_fake] * rate1[dst_fake]).sum(-1) / rate0.shape[-1] ** 0.5)
-        rate1_fake = jnp.exp((rate1[src_fake] * rate1[dst_fake]).sum(-1) / rate1.shape[-1] ** 0.5)
+        rate0_fake = jnp.exp((rate0[src_fake] + rate1[dst_fake]).sum(-1))
+        rate1_fake = jnp.exp((rate1[src_fake] + rate1[dst_fake]).sum(-1))
         alpha_fake = jax.nn.sigmoid((alpha[src_real] * alpha[dst_fake]).sum(-1) / alpha.shape[-1] ** 0.5)
         # q_z_fake = SoftBernoulli(rate0_fake, rate0_fake, alpha_fake)
 
-        return rate0_fake.mean(), rate0_real.mean()
+        return alpha_fake.mean(), alpha_real.mean()
 
 
     import tqdm
