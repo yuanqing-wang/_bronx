@@ -3,12 +3,11 @@ import scipy.sparse as sp
 import torch
 import dgl
 from sklearn.metrics import average_precision_score
-from bronx.layers import GraphAutoEncoder as GAE
+from bronx.layers import VariationalGraphAutoEncoder as VGAE
 from bronx.utils import EarlyStopping
 from utils import load_data, mask_test_edges, preprocess_graph, get_roc_score
 
 def run(args):
-
 
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
@@ -16,12 +15,13 @@ def run(args):
     a = g.adj()
     h = g.ndata['feat']
     h = 1.0 * (h > 0.0)
-    model = GAE(g.ndata['feat'].shape[-1], 32, 16)
+    model = VGAE(g.ndata['feat'].shape[-1], 32, 16)
 
     a_ref = g.adj(scipy_fmt="coo")
     a_ref = a_ref - sp.dia_matrix((a_ref.diagonal()[np.newaxis, :], [0]), shape=a_ref.shape)
     a_ref.eliminate_zeros()
     adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(a_ref)
+    a = preprocess_graph(adj_train)
 
     if torch.cuda.is_available():
         a = a.cuda()
@@ -39,7 +39,7 @@ def run(args):
         optimizer.step()
 
     with torch.no_grad():
-        _h = model.encode(a, h)
+        _h = model.encode(a, h).rsample()
     roc_score, ap_score = get_roc_score(_h, a_ref, test_edges, test_edges_false)
     print(roc_score, ap_score)
 
