@@ -1,10 +1,15 @@
+import numpy as np
+import scipy.sparse as sp
 import torch
 import dgl
 from sklearn.metrics import average_precision_score
-from bronx.layers import GAE
+from bronx.layers import GraphAutoEncoder as GAE
 from bronx.utils import EarlyStopping
+from utils import load_data, mask_test_edges, preprocess_graph, get_roc_score
 
 def run(args):
+
+
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.add_self_loop(g)
@@ -12,6 +17,11 @@ def run(args):
     h = g.ndata['feat']
     h = 1.0 * (h > 0.0)
     model = GAE(g.ndata['feat'].shape[-1], 32, 16)
+
+    a_ref = g.adj(scipy_fmt="coo")
+    a_ref = a_ref - sp.dia_matrix((a_ref.diagonal()[np.newaxis, :], [0]), shape=a_ref.shape)
+    a_ref.eliminate_zeros()
+    adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(a_ref)
 
     if torch.cuda.is_available():
         a = a.cuda()
@@ -21,23 +31,18 @@ def run(args):
     optimizer = torch.optim.Adam(model.parameters(), 1e-2)
 
     import tqdm
-    for idx_range in range(10000):
+    for idx_range in range(200):
         model.train()
         optimizer.zero_grad()
         loss = model.loss(a, h)
         loss.backward()
         optimizer.step()
 
-        if idx_range % 100 == 0:
-            with torch.no_grad():
-                model.eval()
-                a_hat = model(a, h)
-                # a_hat = 1.0 * (a_hat > 0.5)
-                # accuracy = (a_hat.flatten() == a.to_dense().flatten()).sum() / a_hat.numel()
-                # print(accuracy)
+    with torch.no_grad():
+        _h = model.encode(a, h)
+    roc_score, ap_score = get_roc_score(_h, a_ref, test_edges, test_edges_false)
+    print(roc_score, ap_score)
 
-                ap = average_precision_score(a.to_dense().flatten().cpu(), a_hat.flatten().cpu())
-                print(ap)
 
 if __name__ == "__main__":
     import argparse

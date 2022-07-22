@@ -7,10 +7,6 @@ def _sum(x, *args, **kwargs):
     else:
         return torch.sum(x, *args, **kwargs)
 
-class ShiftedELU(torch.nn.Module):
-    def forward(self, x):
-        return torch.nn.ELU()(x) + 1.5
-
 class GCN(torch.nn.Module):
     def __init__(
         self,
@@ -34,58 +30,7 @@ class GCN(torch.nn.Module):
             h = self.activation(h)
         return h
 
-class BVGAE(torch.nn.Module):
-    def __init__(
-        self,
-        in_features: int,
-        hidden_features: int,
-        out_features: int,
-    ):
-        super().__init__()
-        self.gcn0 = GCN(in_features, hidden_features, activation=torch.nn.ReLU())
-        self.gcn1 = GCN(hidden_features, hidden_features)
-        self.layer_alpha = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features, 1),
-            ShiftedELU(),
-        )
-        self.layer_beta = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features, 1),
-            ShiftedELU(),
-        )
-        self.p_z = torch.distributions.Beta(0.5, 0.5)
-        self.epsilon = 1e-3
-
-    def _forward(self, a, h):
-        h = self.gcn0(a, h)
-        h = self.gcn1(a, h)
-        alpha, beta = self.layer_alpha(h).squeeze(-1), self.layer_beta(h).squeeze(-1)
-        return alpha, beta
-
-    def forward(self, a, h):
-        alpha, beta = self._forward(a, h)
-        alpha = alpha.unsqueeze(0) + alpha.unsqueeze(1)
-        beta = beta.unsqueeze(0) + beta.unsqueeze(1)
-        return torch.distributions.Beta(alpha, beta)
-
-    def loss(self, a, h):
-        alpha, beta = self._forward(a, h)
-        src, dst = a.coalesce().indices()
-        src, dst = src[src != dst], dst[src != dst]
-
-        alpha1 = alpha[src] + alpha[dst]
-        beta1 = beta[src] + beta[dst]
-
-        _src, _dst = torch.randint(high=a.shape[0], size=src.shape), torch.randint(high=a.shape[0], size=src.shape)
-        alpha0 = alpha[_src] + alpha[_dst]
-        beta0 = beta[_src] + beta[_dst]
-
-        beta1 = torch.distributions.Beta(alpha1, beta1)
-        beta0 = torch.distributions.Beta(alpha0, beta0)
-
-        mll = beta1.log_prob(torch.tensor(1.0 - self.epsilon)) + beta0.log_prob(torch.tensor(self.epsilon))
-        return -mll.mean()
-
-class GAE(torch.nn.Module):
+class GraphAutoEncoder(torch.nn.Module):
     def __init__(self, in_features, hidden_features, out_features):
         super().__init__()
         self.gcn0 = GCN(in_features, hidden_features, activation=torch.nn.ReLU())
@@ -102,8 +47,7 @@ class GAE(torch.nn.Module):
         return a_hat
 
     def loss(self, a, h):
-        h = self.encode(a, h)
-        a_hat = h @ h.t()
+        a_hat = self(a, h)
         a = a.to_dense()
         pos_weight = (a.shape[0] * a.shape[0] - a.sum()) / a.sum()
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
