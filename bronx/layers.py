@@ -71,17 +71,17 @@ class VariationalGraphAutoEncoder(torch.nn.Module):
         p_z = torch.distributions.Normal(mu, sigma)
         return p_z
 
-    def decode(self, q_z):
-        z = q_z.rsample()
-        a_hat = z @ z.t()
+    def decode(self, q_z, n_samples=1):
+        z = q_z.rsample((n_samples, ))
+        a_hat = torch.bmm(z, z.transpose(-2, -1))
         return a_hat
 
-    def forward(self, a, h):
-        return self.decode(self.encode(a, h))
+    def forward(self, a, h, n_samples=1):
+        return self.decode(self.encode(a, h), n_samples=n_samples)
 
     def loss(self, a, h):
         q_z = self.encode(a, h)
-        a_hat = self.decode(q_z)
+        a_hat = self.decode(q_z).mean(dim=0)
 
         a = a.to_dense()
         pos_weight = (a.shape[0] * a.shape[0] - a.sum()) / a.sum()
@@ -125,22 +125,36 @@ class Bronx(torch.nn.Module):
         super().__init__()
         self.vgae = SharedVariationalGraphAutoEncoder(in_features, hidden_features, hidden_features)
         self.fc = torch.nn.Linear(hidden_features, out_features, bias=False)
+        self.a_candidate = None
 
-    def reconstruct(self, a, h):
-        a_hat = self.vgae(a, h)
+    def reconstruct(self, a, h, n_samples=1):
+        a_hat = self.vgae(a, h, n_samples=n_samples)
         return a_hat
 
-    def candidate(self, a, k=2):
-        for _ in range(k - 1):
-            a = a @ a
-        return a.to_dense().clamp(0, 1)
+    def candidate(self, a, k=3):
+        if self.a_candidate is None:
+            self.a_ref = a
+            for _ in range(k - 1):
+                a = a @ a
+            self.a_candidate = a.to_dense().clamp(0, 1)
+        return self.a_candidate
 
-    def forward(self, a, h):
+    def sparsify(self, a):
+        k = self.a_ref._nnz() - self.a_ref.shape[0]
+        a = a - torch.eye(a.shape[0])
+        a_flatten = a.flatten(-2, -1)
+        topk_value, _ = torch.topk(a_flatten, k, -1)
+        threshold = topk_value.min(dim=-1)[0]
+        a = torch.where(a > threshold, a, torch.zeros_like(a))
+        a = a + torch.eye(a.shape[0])
+        return a
+
+    def forward(self, a, h, n_samples=1):
         a_candidate = self.candidate(a)
-        a_hat = self.reconstruct(a, h).sigmoid()
+        a_hat = self.reconstruct(a, h, n_samples=n_samples).sigmoid()
         a_hat = a_hat * a_candidate
         h = self.vgae._forward(a_hat, h)
-        y_hat = self.fc(h)
+        y_hat = self.fc(h).mean(dim=0)
         return y_hat
 
     def loss_vae(self, a, h):

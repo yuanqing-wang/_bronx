@@ -18,7 +18,7 @@ def run(args):
     for _ in tqdm.tqdm(range(500)):
         model.train()
         optimizer.zero_grad()
-        y_hat = model(a, g.ndata['feat'])[g.ndata['train_mask']]
+        y_hat = model(a, g.ndata['feat'], n_samples=8)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
         loss = torch.nn.CrossEntropyLoss()(y_hat, y) + model.loss_vae(a, g.ndata['feat'])
         loss.backward()
@@ -26,7 +26,7 @@ def run(args):
         model.eval()
 
         with torch.no_grad():
-            y_hat = model(a, g.ndata["feat"])[g.ndata["val_mask"]]
+            y_hat = model(a, g.ndata["feat"], n_samples=8)[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             print(accuracy)
