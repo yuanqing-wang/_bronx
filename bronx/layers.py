@@ -121,18 +121,21 @@ class SharedVariationalGraphAutoEncoder(VariationalGraphAutoEncoder):
         return p_z
 
 class Bronx(torch.nn.Module):
-    def __init__(self, in_features, hidden_features, out_features):
+    def __init__(self, in_features, hidden_features, out_features, neighborhood_size=3):
         super().__init__()
         self.vgae = SharedVariationalGraphAutoEncoder(in_features, hidden_features, hidden_features)
         self.fc = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.a_candidate = None
+        self.neighborhood_size = neighborhood_size
 
     def reconstruct(self, a, h, n_samples=1):
         a_hat = self.vgae(a, h, n_samples=n_samples)
         return a_hat
 
-    def candidate(self, a, k=3):
+    def candidate(self, a, k=None):
         if self.a_candidate is None:
+            if k is None:
+                k = self.neighborhood_size
             self.a_ref = a
             for _ in range(k - 1):
                 a = a @ a
