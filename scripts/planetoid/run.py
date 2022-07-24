@@ -25,8 +25,8 @@ def run(args):
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     early_stopping = EarlyStopping(args.early_stopping)
 
-    import tqdm
-    for _ in tqdm.tqdm(range(1000)):
+    # import tqdm
+    for _ in range(1000):
         model.train()
         optimizer.zero_grad()
         y_hat = model(a, g.ndata['feat'], n_samples=args.n_samples)[g.ndata['train_mask']]
