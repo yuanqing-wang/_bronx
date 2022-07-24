@@ -73,7 +73,7 @@ class VariationalGraphAutoEncoder(torch.nn.Module):
 
     def decode(self, q_z, n_samples=1):
         z = q_z.rsample((n_samples, ))
-        a_hat = torch.bmm(z, z.transpose(-2, -1))
+        a_hat = torch.bmm(z, z.transpose(-2, -1)) / (z.shape[-1] ** 0.5)
         return a_hat
 
     def forward(self, a, h, n_samples=1):
@@ -108,9 +108,13 @@ class SharedVariationalGraphAutoEncoder(VariationalGraphAutoEncoder):
         self.fc_mu = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.p_z = torch.distributions.Normal(0, 1)
+        # self.dropout0 = torch.nn.Dropout(0.5)
+        # self.dropout1 = torch.nn.Dropout(0.5)
 
     def _forward(self, a, h):
+        # h = self.dropout0(h)
         h = self.gcn0(a, h)
+        # h = self.dropout1(h)
         h = self.gcn1(a, h)
         return h
 
@@ -132,14 +136,16 @@ class Bronx(torch.nn.Module):
         a_hat = self.vgae(a, h, n_samples=n_samples)
         return a_hat
 
+    @torch.no_grad()
     def candidate(self, a, k=None):
         if self.a_candidate is None:
             if k is None:
                 k = self.neighborhood_size
             self.a_ref = a
+            a = a.to_dense()
             for _ in range(k - 1):
                 a = a @ a
-            self.a_candidate = a.to_dense().clamp(0, 1)
+            self.a_candidate = a.clamp(0, 1)
         return self.a_candidate
 
     def sparsify(self, a):
