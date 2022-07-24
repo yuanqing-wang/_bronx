@@ -127,7 +127,8 @@ class SharedVariationalGraphAutoEncoder(VariationalGraphAutoEncoder):
 class Bronx(torch.nn.Module):
     def __init__(self, in_features, hidden_features, out_features, neighborhood_size=3):
         super().__init__()
-        self.vgae = SharedVariationalGraphAutoEncoder(in_features, hidden_features, hidden_features)
+        self.vgae = SharedVariationalGraphAutoEncoder(
+            in_features, hidden_features, hidden_features)
         self.fc = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.a_candidate = None
         self.neighborhood_size = neighborhood_size
@@ -162,6 +163,7 @@ class Bronx(torch.nn.Module):
         a_candidate = self.candidate(a)
         a_hat = self.reconstruct(a, h, n_samples=n_samples).sigmoid()
         a_hat = a_hat * a_candidate
+        a_hat = self.sparsify(a_hat)
         h = self.vgae._forward(a_hat, h)
         y_hat = self.fc(h).mean(dim=0)
         return y_hat
