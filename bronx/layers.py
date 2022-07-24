@@ -155,6 +155,7 @@ class Bronx(torch.nn.Module):
         a_flatten = a.flatten(-2, -1)
         topk_value, _ = torch.topk(a_flatten, k, -1)
         threshold = topk_value.min(dim=-1)[0]
+        threshold = threshold.reshape(threshold.shape + (1,) * (len(a.shape) - 1))
         a = torch.where(a > threshold, a, torch.zeros_like(a))
         a = a + torch.eye(a.shape[-1], device=a.device).clamp(max=1)
         return a
