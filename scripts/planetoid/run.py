@@ -22,7 +22,7 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.001)
     early_stopping = EarlyStopping(args.early_stopping)
 
     # import tqdm
