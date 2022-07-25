@@ -108,13 +108,13 @@ class SharedVariationalGraphAutoEncoder(VariationalGraphAutoEncoder):
         self.fc_mu = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.p_z = torch.distributions.Normal(0, 1)
-        # self.dropout0 = torch.nn.Dropout(0.5)
-        # self.dropout1 = torch.nn.Dropout(0.5)
+        self.dropout0 = torch.nn.Dropout(0.5)
+        self.dropout1 = torch.nn.Dropout(0.5)
 
     def _forward(self, a, h):
-        # h = self.dropout0(h)
+        h = self.dropout0(h)
         h = self.gcn0(a, h)
-        # h = self.dropout1(h)
+        h = self.dropout1(h)
         h = self.gcn1(a, h)
         return h
 
@@ -164,7 +164,7 @@ class Bronx(torch.nn.Module):
         a_candidate = self.candidate(a)
         a_hat = self.reconstruct(a, h, n_samples=n_samples).sigmoid()
         a_hat = a_hat * a_candidate
-        a_hat = self.sparsify(a_hat)
+        # a_hat = self.sparsify(a_hat)
         h = self.vgae._forward(a_hat, h)
         y_hat = self.fc(h).mean(dim=0)
         return y_hat
