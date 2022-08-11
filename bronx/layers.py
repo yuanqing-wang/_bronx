@@ -20,12 +20,13 @@ class BronxLayer(torch.nn.Module):
         # attention weights
         self.fc_k = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_q = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_v = torch.nn.Lienar(in_features, out_features, bias=False)
+        self.fc_v = torch.nn.Linear(in_features, out_features, bias=False)
 
         # mixing
         mixing = torch.zeros(2, 2)
         mixing[0, 0] = semantic_weight
         mixing[0, 1] = semantic_weight
+        self.mixing = torch.nn.Parameter(mixing)
 
         self.hidden_features = hidden_features
         self.activation = activation

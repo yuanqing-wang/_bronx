@@ -22,10 +22,10 @@ class BronxModel(torch.nn.Module):
         self.log_identity_weights = torch.nn.Parameter(torch.tensor(0.0))
 
     def forward(self, h, a):
-        i = torch.eye(a.shape[-1], device=a.device, dtype=a.device)
+        i = torch.eye(a.shape[-1], device=a.device, dtype=a.dtype)
         x = a + i * self.log_identity_weights.exp()
         h = self.embedding_in(h)
         for layer in self.layers:
-            h, x = self.layer(h, x)
+            h, x = layer(h, x)
         h = self.embedding_out(h)
         return h
