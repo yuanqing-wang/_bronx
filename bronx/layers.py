@@ -172,3 +172,19 @@ class Bronx(torch.nn.Module):
     def loss_vae(self, a, h):
         loss_vae = self.vgae.loss(a, h)
         return loss_vae
+
+class Attention(torch.nn.Module):
+    def __init__(self, in_features, out_features, activation=torch.nn.ELU()):
+        super().__init__()
+        self.fc = torch.nn.Linear(in_features, out_features, bias=False)
+        self.activation = activation
+
+    def forward(self, h):
+        h = self.fc(h)
+        a = h @ h.t()
+        a = a - 1e10 * torch.eye(a.shape[-1])
+        a = a.softmax(-1)
+        a = a + torch.eye(a.shape[-1])
+        a = a.clamp(max=1.0)
+        h = a @ h
+        return h, a
