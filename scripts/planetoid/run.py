@@ -6,7 +6,7 @@ def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
-    a = g.adj()
+    a = g.adj().to_dense()
 
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
@@ -36,13 +36,12 @@ def run(args):
         model.eval()
 
         with torch.no_grad():
-            y_hat = model(a, g.ndata["feat"], n_samples=args.n_samples)[g.ndata["val_mask"]]
+            y_hat = model(g.ndata["feat"], a)[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             best_accuracy = max(best_accuracy, accuracy)
 
     print(best_accuracy)
-    print(args)
 
 if __name__ == "__main__":
     import argparse
@@ -50,8 +49,9 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="cora")
     parser.add_argument("--hidden_features", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--n_samples", type=int, default=1)
-    parser.add_argument("--early_stopping", type=int, default=10)
-    parser.add_argument("--neighborhood_size", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--residual", type=bool, default=True)
+    parser.add_argument("--weight_decay", type=float, default=1e-10)
     args = parser.parse_args()
+    print(args)
     run(args)
