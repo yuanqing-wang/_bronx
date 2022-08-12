@@ -20,7 +20,7 @@ class BronxLayer(torch.nn.Module):
         # attention weights
         self.fc_k = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_q = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_v = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_v = torch.nn.Linear(in_features+3, out_features, bias=False)
 
         # mixing
         mixing = torch.zeros(2, 2)
@@ -32,22 +32,37 @@ class BronxLayer(torch.nn.Module):
         self.activation = activation
         self.norm = torch.nn.LayerNorm(in_features)
         self.residual = residual
+        self.dropout = torch.nn.Dropout(0.5)
 
     def forward(self, h, x):
         h0, x0 = h, x
         h = self.norm(h)
+        x = torch.nn.functional.normalize(x, p=1, dim=-1)
         k = self.fc_k(h)
         q = self.fc_q(h)
         a_h = (k @ q.t() * self.hidden_features ** (-0.5)).softmax(-1)
         a_x = x @ x.t()
-        a_x = torch.nn.functional.normalize(a_x, p=2, dim=-1)
+        d = a_x.sum(-1, keepdims=True)
+
+        i = torch.cat(
+            [
+                a_x.diag().unsqueeze(-1),
+                a_x.sum(-1, keepdims=True),
+                a_x.std(-1, keepdims=True),
+            ],
+            dim=-1,
+        )
+
+        # a_x = torch.nn.functional.normalize(a_x, p=2, dim=-1)
         a = torch.stack([a_h, a_x], dim=-1)
         a = a @ self.mixing.softmax(0)
         a_h, a_x = a[..., 0], a[..., 1]
         h = a_h @ h
         x = a_x @ x
+        h = torch.cat([h, i], dim=-1)
         h = self.fc_v(h)
         h = self.activation(h)
+        h = self.dropout(h)
         if self.residual:
             h = h + h0
             x = x + x0

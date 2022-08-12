@@ -14,6 +14,7 @@ def run(args):
         hidden_features=args.hidden_features,
         depth=args.depth,
         residual=args.residual,
+        semantic_weight=args.semantic_weight,
     )
 
     if torch.cuda.is_available():
@@ -50,8 +51,9 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_features", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--depth", type=int, default=2)
-    parser.add_argument("--residual", type=bool, default=True)
+    parser.add_argument("--residual", type=int, default=1)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
+    parser.add_argument("--semantic_weight", type=float, default=-1.0)
     args = parser.parse_args()
     print(args)
     run(args)
