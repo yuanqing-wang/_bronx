@@ -10,13 +10,14 @@ class BronxModel(torch.nn.Module):
         depth,
         residual=True,
         semantic_weight=-1.0,
+        num_heads=1,
     ):
         super().__init__()
         self.embedding_in = torch.nn.Linear(in_features, hidden_features)
         layers = []
         for _ in range(depth):
             layers.append(
-                BronxLayer(hidden_features, semantic_weight=semantic_weight),
+                BronxLayer(hidden_features, semantic_weight=semantic_weight, num_heads=num_heads),
             )
         self.layers = torch.nn.ModuleList(layers)
         self.embedding_out = torch.nn.Linear(hidden_features, out_features)

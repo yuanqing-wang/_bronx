@@ -19,14 +19,16 @@ class BronxLayer(torch.nn.Module):
             out_features = hidden_features
 
         # attention weights
-        self.fc_k = torch.nn.Linear(in_features, hidden_features * num_heads, bias=False)
-        self.fc_q = torch.nn.Linear(in_features, hidden_features * num_heads, bias=False)
-        self.fc_v = torch.nn.Linear(in_features+3, out_features, bias=False)
+        self.fc_k = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.fc_q = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.fc_v = torch.nn.Linear(in_features+3, hidden_features, bias=False)
+        self.fc = torch.nn.Linear(hidden_features, out_features)
 
         # mixing
         mixing = torch.ones(num_heads + 1, num_heads +1) * semantic_weight
         mixing[0] = 0.0
-        self.mixing = torch.nn.Parameter(mixing)
+        # self.mixing = torch.nn.Parameter(mixing)
+        self.register_buffer("mixing", mixing)
         self.hidden_features = hidden_features
         self.activation = activation
         self.norm = torch.nn.LayerNorm(in_features)
@@ -39,12 +41,13 @@ class BronxLayer(torch.nn.Module):
         x = torch.nn.functional.normalize(x, p=1, dim=-1)
         k = self.fc_k(h)
         q = self.fc_q(h)
+
+        # (n, d, n_heads)
         k = k.reshape(k.shape[0], int(self.hidden_features / self.num_heads), self.num_heads)
         q = q.reshape(q.shape[0], int(self.hidden_features / self.num_heads), self.num_heads)
 
         # (n_heads, n, n)
-        a_h = (torch.bmm(k.permute(2, 0, 1), q.permute(2, 1, 0)) * self.hidden_features ** (-0.5)).softmax(-1)
-        a_h = a_h.permute(1, 2, 0)
+        a_h = torch.einsum("xyb,zyb->xzb", k, q).softmax(-2)
         a_x = x @ x.t()
 
         i = torch.cat(
@@ -55,17 +58,20 @@ class BronxLayer(torch.nn.Module):
             ],
             dim=-1,
         )
+        
+        h = torch.cat([h, i], dim=-1)
+        v = self.fc_v(h)
+        v = v.reshape(v.shape[0], int(self.hidden_features / self.num_heads), self.num_heads)
 
         a = torch.cat([a_x.unsqueeze(-1), a_h], dim=-1)
         a = a @ self.mixing.softmax(0)
         a_x, a_h = a[..., 0], a[..., 1:]
-        a_h = a_h.transpose(-1, 0)
-        h = a_h @ h
+
+        h = torch.einsum("xyb,yzb->xzb", a_h, v).reshape(v.shape[0], self.hidden_features)
         x = a_x @ x
-        h = h.reshape(h.shape[1], self.hidden_features)
-        h = torch.cat([h, i], dim=-1)
-        h = self.fc_v(h)
+        h = self.fc(h)
         h = self.activation(h)
+
         if self.residual:
             h = h + h0
             x = x + x0
