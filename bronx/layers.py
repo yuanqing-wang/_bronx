@@ -67,6 +67,9 @@ class BronxLayer(torch.nn.Module):
         a_h = self.mixing_x2h(torch.cat([a_x.unsqueeze(-1), a_h], -1))
         a_x = self.mixing_h2x(a_h).squeeze(-1) + a_x
 
+        a_h = a_h.softmax(-1)
+        a_x = torch.nn.functional.normalize(a_x, p=1, dim=-1)
+
         i = torch.cat(
             [
                 a_x.diag().unsqueeze(-1),
@@ -80,11 +83,6 @@ class BronxLayer(torch.nn.Module):
 
         v = self.fc_v(h)
         v = v.reshape(v.shape[0], int(self.out_features / self.num_heads), self.num_heads)
-
-        a = torch.cat([a_x.unsqueeze(-1), a_h], dim=-1)
-        a = a @ self.mixing.softmax(0)
-        a = torch.nn.functional.normalize(a, p=1, dim=-2)
-        a_x, a_h = a[..., 0], a[..., 1:]
 
         h = torch.einsum("xyb,yzb->xzb", a_h, v)
         h = h.reshape(v.shape[0], self.hidden_features)
