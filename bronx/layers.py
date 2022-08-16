@@ -8,13 +8,11 @@ class BronxLayer(torch.nn.Module):
             hidden_features=None,
             out_features=None,
             num_heads=1,
-            semantic_weight=-1.0,
             activation=torch.nn.ELU(),
             residual=True,
             a_h_drop=0.0,
             a_x_drop=0.0,
             fc_drop=0.0,
-            last=False,
         ):
         super().__init__()
         if hidden_features is None:
@@ -34,11 +32,11 @@ class BronxLayer(torch.nn.Module):
             torch.nn.Dropout(fc_drop),
             activation,
         )
-        
+
         # mixing
-        mixing = torch.ones(num_heads + 1, num_heads +1) * semantic_weight
-        mixing[0] = 0.0
-        self.mixing = torch.nn.Parameter(mixing)
+        self.mixing_x2h = torch.nn.Linear(num_heads+1, num_heads)
+        self.mixing_h2x = torch.nn.Linear(num_heads, 1)
+
         self.hidden_features = hidden_features
         self.out_features = out_features
         self.activation = activation
@@ -48,7 +46,6 @@ class BronxLayer(torch.nn.Module):
         self.num_heads = num_heads
         self.a_h_drop = torch.nn.Dropout(a_h_drop)
         self.a_x_drop = torch.nn.Dropout(a_x_drop)
-        self.last = last
 
     def forward(self, h, x):
         h0, x0 = h, x
@@ -63,9 +60,12 @@ class BronxLayer(torch.nn.Module):
 
         # (n_heads, n, n)
         a_h = torch.einsum("xyb,zyb->xzb", k, q)
-        a_h = a_h.softmax(-2)
-        a_h = self.a_h_drop(a_h)
         a_x = x @ x.t()
+        a_x = self.a_x_drop(a_x)
+        a_h = self.a_h_drop(a_h)
+
+        a_h = self.mixing_x2h(torch.cat([a_x.unsqueeze(-1), a_h], -1))
+        a_x = self.mixing_h2x(a_h).squeeze(-1) + a_x
 
         i = torch.cat(
             [
@@ -77,7 +77,7 @@ class BronxLayer(torch.nn.Module):
             dim=-1,
         )
 
-        a_x = self.a_x_drop(a_x)
+
         v = self.fc_v(h)
         v = v.reshape(v.shape[0], int(self.out_features / self.num_heads), self.num_heads)
 
