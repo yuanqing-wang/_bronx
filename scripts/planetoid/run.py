@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import dgl
 from bronx.models import BronxModel
@@ -15,6 +16,10 @@ def run(args):
         depth=args.depth,
         residual=args.residual,
         semantic_weight=args.semantic_weight,
+        num_heads=args.num_heads,
+        a_h_drop=args.a_h_dropout,
+        a_x_drop=args.a_x_dropout,
+        fc_drop=args.fc_dropout,
     )
 
     if torch.cuda.is_available():
@@ -23,7 +28,8 @@ def run(args):
         g = g.to("cuda:0")
 
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
-    best_accuracy = 0.0
+    accuracy_vl = []
+    accuracy_te = []
 
     # import tqdm
     for _ in range(1000):
@@ -40,9 +46,26 @@ def run(args):
             y_hat = model(g.ndata["feat"], a)[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-            best_accuracy = max(best_accuracy, accuracy)
+            accuracy_vl.append(accuracy)
 
-    print(best_accuracy)
+            y_hat = model(g.ndata["feat"], a)[g.ndata["test_mask"]]
+            y = g.ndata["label"][g.ndata["test_mask"]]
+            accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
+            accuracy_te.append(accuracy)
+
+    accuracy_vl = np.array(accuracy_vl)
+    accuracy_te = np.array(accuracy_te)
+
+    print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
+
+    import pandas as pd
+    df = vars(args)
+    df["accuracy_vl"] = accuracy_vl.max()
+    df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
+    df = pd.DataFrame.from_dict([df])
+    import os
+    header = not os.path.exists("performance.csv")
+    df.to_csv("performance.csv", mode="a", header=header)
 
 if __name__ == "__main__":
     import argparse
@@ -54,6 +77,10 @@ if __name__ == "__main__":
     parser.add_argument("--residual", type=int, default=1)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--semantic_weight", type=float, default=-1.0)
+    parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--a_h_dropout", type=float, default=0.0)
+    parser.add_argument("--a_x_dropout", type=float, default=0.0)
+    parser.add_argument("--fc_dropout", type=float, default=0.0)
     args = parser.parse_args()
     print(args)
     run(args)
