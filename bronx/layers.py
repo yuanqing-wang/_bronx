@@ -35,7 +35,7 @@ class BronxLayer(torch.nn.Module):
             torch.nn.Dropout(fc_drop),
             activation,
         )
-        
+
         # mixing
         mixing = torch.ones(num_heads + 1, num_heads +1) * semantic_weight
         mixing[0] = 0.0
@@ -84,7 +84,7 @@ class BronxLayer(torch.nn.Module):
         a_x = self.a_x_drop(a_x)
         v = self.fc_v(h)
         v = v.reshape(v.shape[0], int(self.out_features / self.num_heads), self.num_heads)
-        
+
         a = torch.cat([a_x.unsqueeze(-1), a_h], dim=-1)
         a = a @ self.mixing.softmax(0)
         a = torch.nn.functional.normalize(a, p=1, dim=-2)
