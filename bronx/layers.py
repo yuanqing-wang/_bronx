@@ -9,6 +9,7 @@ class BronxLayer(torch.nn.Module):
             out_features=None,
             num_heads=1,
             semantic_weight=-1.0,
+            epsilon=1.0,
             activation=torch.nn.ELU(),
             residual=True,
             a_h_drop=0.0,
@@ -25,12 +26,12 @@ class BronxLayer(torch.nn.Module):
             out_features = out_features * num_heads
 
         # attention weights
-        self.fc_k = torch.nn.Linear(in_features, hidden_features)
-        self.fc_q = torch.nn.Linear(in_features, hidden_features)
-        self.fc_v = torch.nn.Linear(in_features, hidden_features)
+        self.fc_k = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.fc_q = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.fc_v = torch.nn.Linear(in_features, hidden_features, bias=False)
 
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features+4, out_features),
+            torch.nn.Linear(hidden_features, out_features),
             torch.nn.Dropout(fc_drop),
             activation,
         )
@@ -38,6 +39,7 @@ class BronxLayer(torch.nn.Module):
         # mixing
         mixing = torch.ones(num_heads + 1, num_heads +1) * semantic_weight
         mixing[0] = 0.0
+        mixing = mixing + torch.randn_like(mixing) * epsilon
         self.mixing = torch.nn.Parameter(mixing)
         self.hidden_features = hidden_features
         self.out_features = out_features
@@ -67,6 +69,7 @@ class BronxLayer(torch.nn.Module):
         a_h = self.a_h_drop(a_h)
         a_x = x @ x.t()
 
+        '''
         i = torch.cat(
             [
                 a_x.diag().unsqueeze(-1),
@@ -76,16 +79,16 @@ class BronxLayer(torch.nn.Module):
             ],
             dim=-1,
         )
+        '''
 
         a_x = self.a_x_drop(a_x)
         v = self.fc_v(h)
         v = v.reshape(v.shape[0], int(self.out_features / self.num_heads), self.num_heads)
-
+        
         a = torch.cat([a_x.unsqueeze(-1), a_h], dim=-1)
         a = a @ self.mixing.softmax(0)
         a = torch.nn.functional.normalize(a, p=1, dim=-2)
         a_x, a_h = a[..., 0], a[..., 1:]
-
         h = torch.einsum("xyb,yzb->xzb", a_h, v)
         h = h.reshape(v.shape[0], self.hidden_features)
 
@@ -97,7 +100,7 @@ class BronxLayer(torch.nn.Module):
 
         _h0 = h
         h = self.norm_fc(h)
-        h = torch.cat([h, i], dim=-1)
+        # h = torch.cat([h, i], dim=-1)
         h = self.fc(h)
 
         if self.residual:

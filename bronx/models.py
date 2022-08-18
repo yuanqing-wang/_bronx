@@ -11,7 +11,9 @@ class BronxModel(torch.nn.Module):
         **kwargs,
     ):
         super().__init__()
-        self.embedding_in = torch.nn.Linear(in_features, hidden_features)
+        self.embedding_in = torch.nn.Linear(in_features, hidden_features, bias=False)
+
+        '''
         layers = []
         # layers.append(BronxLayer(in_features, hidden_features, hidden_features, **kwargs))
         for _ in range(depth):
@@ -20,7 +22,12 @@ class BronxModel(torch.nn.Module):
             )
         # layers.append(BronxLayer(hidden_features, hidden_features, out_features, last=True, **kwargs))
         self.layers = torch.nn.ModuleList(layers)
-        self.embedding_out = torch.nn.Linear(hidden_features, out_features)
+        '''
+
+        self.layer = BronxLayer(hidden_features, **kwargs)
+        self.layers = [self.layer for _ in range(depth)]
+
+        self.embedding_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.log_identity_weights = torch.nn.Parameter(torch.tensor(0.0))
 
     def forward(self, h, a):
@@ -28,6 +35,7 @@ class BronxModel(torch.nn.Module):
         x = a + i * self.log_identity_weights.exp()
         h = self.embedding_in(h)
         for layer in self.layers:
-            h, x = layer(h, x)
+             h, x = layer(h, x)
+
         h = self.embedding_out(h)
         return h
