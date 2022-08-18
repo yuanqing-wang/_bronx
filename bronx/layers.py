@@ -31,7 +31,7 @@ class BronxLayer(torch.nn.Module):
         self.fc_v = torch.nn.Linear(in_features, hidden_features, bias=False)
 
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features, out_features),
+            torch.nn.Linear(hidden_features+4, out_features),
             torch.nn.Dropout(fc_drop),
             activation,
         )
@@ -69,17 +69,15 @@ class BronxLayer(torch.nn.Module):
         a_h = self.a_h_drop(a_h)
         a_x = x @ x.t()
 
-        '''
         i = torch.cat(
             [
-                a_x.diag().unsqueeze(-1),
-                a_x.sum(-1, keepdims=True),
-                a_x.std(-1, keepdims=True),
-                a_x.max(-1, keepdims=True)[0],
+                x.diag().unsqueeze(-1),
+                x.sum(-1, keepdims=True),
+                x.std(-1, keepdims=True),
+                x.max(-1, keepdims=True)[0],
             ],
             dim=-1,
         )
-        '''
 
         a_x = self.a_x_drop(a_x)
         v = self.fc_v(h)
@@ -100,7 +98,7 @@ class BronxLayer(torch.nn.Module):
 
         _h0 = h
         h = self.norm_fc(h)
-        # h = torch.cat([h, i], dim=-1)
+        h = torch.cat([h, i], dim=-1)
         h = self.fc(h)
 
         if self.residual:
