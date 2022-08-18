@@ -15,7 +15,8 @@ python run.py \
     --num_heads $num_heads \
     --a_h_dropout $a_h_dropout \
     --a_x_dropout $a_x_dropout \
-    --fc_dropout $fc_dropout
+    --fc_dropout $fc_dropout \
+    --epsilon $epsilon
 
 python upload.py
 

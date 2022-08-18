@@ -20,6 +20,7 @@ def run(args):
         a_h_drop=args.a_h_dropout,
         a_x_drop=args.a_x_dropout,
         fc_drop=args.fc_dropout,
+        epsilon=args.epsilon,
     )
 
     if torch.cuda.is_available():
@@ -81,6 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--a_h_dropout", type=float, default=0.0)
     parser.add_argument("--a_x_dropout", type=float, default=0.0)
     parser.add_argument("--fc_dropout", type=float, default=0.0)
+    parser.add_argument("--epsilon", type=float, default=1.0)
     args = parser.parse_args()
     print(args)
     run(args)
