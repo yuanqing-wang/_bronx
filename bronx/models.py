@@ -19,18 +19,19 @@ class BronxModel(torch.nn.Module):
             torch.nn.Linear(hidden_features, out_features)
         )
         self.log_identity_weights = torch.nn.Parameter(torch.tensor(0.0))
+        self.depth = depth
 
     @staticmethod
     def pool_x(x):
-        x = torch.cat(
+        return torch.cat(
             [
-                x.diag().unsqueeze(-1),
+                x.diagonal(dim1=-2, dim2=-1).unsqueeze(-1),
                 x.sum(-1, keepdims=True),
                 x.std(-1, keepdims=True),
                 x.max(-1, keepdims=True)[0],
             ],
             dim=-1
-        ).swapaxes(0, -1).flatten(-2, -1)
+        ).reshape(x.shape[1], -1)
 
     def forward(self, h, a):
         i = torch.eye(a.shape[-1], device=a.device, dtype=a.dtype)
@@ -45,5 +46,6 @@ class BronxModel(torch.nn.Module):
         xs = torch.stack(xs, 0)
         hs = torch.stack(hs, -1).flatten(-2, -1)
         xs = self.pool_x(xs)
-        h = self.embedding_out(torch.cat([hs, xs]))
+        print(hs.shape, xs.shape)
+        h = self.embedding_out(torch.cat([hs, xs], dim=-1))
         return h
