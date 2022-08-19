@@ -10,7 +10,7 @@ class BronxLayer(torch.nn.Module):
             num_heads=1,
             semantic_weight=-1.0,
             epsilon=1.0,
-            activation=torch.nn.ELU(),
+            activation=torch.nn.ReLU(),
             residual=True,
             a_h_drop=0.0,
             a_x_drop=0.0,
@@ -67,7 +67,8 @@ class BronxLayer(torch.nn.Module):
         a_h = torch.einsum("xyb,zyb->xzb", k, q)
         a_h = a_h.softmax(-2)
         a_h = self.a_h_drop(a_h)
-        a_x = x @ x.t()
+        # a_x = x @ x.t()
+        a_x = x
 
         i = torch.cat(
             [
@@ -90,7 +91,8 @@ class BronxLayer(torch.nn.Module):
         h = torch.einsum("xyb,yzb->xzb", a_h, v)
         h = h.reshape(v.shape[0], self.hidden_features)
 
-        x = a_x @ x
+        # x = a_x @ x
+        a_x = x
 
         if self.residual:
             h = h + h0
