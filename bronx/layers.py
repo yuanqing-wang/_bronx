@@ -14,11 +14,13 @@ class BronxLayer(torch.nn.Module):
         self.fc = torch.nn.Linear(hidden_features, hidden_features, bias=False)
         self.norm = torch.nn.LayerNorm(hidden_features)
         self.activation = activation
+        self.num_heads = num_heads
+        self.hidden_features = hidden_features
 
     def forward(self, h, x):
         h = self.norm(h)
         x = torch.nn.functional.normalize(x, p=1, dim=-1)
-        x = torch.stack([torch.matrix_power(x, idx) for idx in range(self.num_heads-1)], -1)
+        x = torch.stack([torch.matrix_power(x, idx) for idx in range(self.num_heads)], -1)
 
         k = self.fc_k(h)
         q = self.fc_q(h)
