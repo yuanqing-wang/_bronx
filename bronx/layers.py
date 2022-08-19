@@ -34,6 +34,7 @@ class BronxLayer(torch.nn.Module):
         a = a.softmax(-2)
 
         a = (a * x).sum(-1).softmax(-1)
+        x = x.mean(-1)
         h = a @ h
         h = self.fc(h)
         h = self.activation(h)
