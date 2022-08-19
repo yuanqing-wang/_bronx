@@ -18,7 +18,7 @@ class BronxLayer(torch.nn.Module):
     def forward(self, h, x):
         h = self.norm(h)
         x = torch.nn.functional.normalize(x, p=1, dim=-1)
-        x = torch.stack([torch.matrix_power(x, idx) for idx in range(self.num_heads-1)], -1)
+        x = torch.stack([torch.matrix_power(x.swapaxes(0, -1), idx) for idx in range(self.num_heads-1)], -1).swapaxes(0, -1)
 
         k = self.fc_k(h)
         q = self.fc_q(h)
