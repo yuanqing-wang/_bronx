@@ -11,7 +11,7 @@ class BronxLayer(torch.nn.Module):
         super().__init__()
         self.fc_k = torch.nn.Linear(hidden_features, hidden_features, bias=False)
         self.fc_q = torch.nn.Linear(hidden_features, hidden_features, bias=False)
-        self.fc = torch.nn.Linear(hidden_features, hidden_features, bias=False)
+        self.fc = torch.nn.Linear(hidden_features, hidden_features*num_heads, bias=False)
         self.norm = torch.nn.LayerNorm(hidden_features)
         self.activation = activation
 
@@ -31,8 +31,9 @@ class BronxLayer(torch.nn.Module):
         a = torch.einsum("xyb,zyb->xzb", k, q)
         a = a.softmax(-2)
 
-        a = (a * x).sum(-1).softmax(-1)
-        h = a @ h
+        a = (a * x).softmax(-2)
+        h = torch.einsum("xyb,yzb->xzb", a, h)
+        h = h.flatten(-2, -1)
         h = self.fc(h)
         h = self.activation(h)
         return h, x
