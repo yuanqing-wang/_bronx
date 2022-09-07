@@ -7,6 +7,7 @@ def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
+    # g = dgl.add_self_loop(g)
     a = g.adj().to_dense()
 
     model = BronxModel(
@@ -14,13 +15,7 @@ def run(args):
         out_features=g.ndata["label"].max() + 1,
         hidden_features=args.hidden_features,
         depth=args.depth,
-        residual=args.residual,
-        semantic_weight=args.semantic_weight,
         num_heads=args.num_heads,
-        a_h_drop=args.a_h_dropout,
-        a_x_drop=args.a_x_dropout,
-        fc_drop=args.fc_dropout,
-        epsilon=args.epsilon,
     )
 
     if torch.cuda.is_available():
@@ -33,7 +28,7 @@ def run(args):
     accuracy_te = []
 
     # import tqdm
-    for _ in range(1000):
+    for _ in range(500):
         model.train()
         optimizer.zero_grad()
         y_hat = model(g.ndata['feat'], a)[g.ndata['train_mask']]
@@ -75,7 +70,6 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_features", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--depth", type=int, default=2)
-    parser.add_argument("--residual", type=int, default=1)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--semantic_weight", type=float, default=-1.0)
     parser.add_argument("--num_heads", type=int, default=1)
