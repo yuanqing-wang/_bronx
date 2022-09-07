@@ -2,25 +2,27 @@ import numpy as np
 import torch
 import dgl
 from bronx.models import BronxModel
+from bronx.utils import personalized_page_rank
 
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
+    g = dgl.add_self_loop(g)
     a = g.adj().to_dense()
+    t = torch.nn.functional.normalize(a, p=1, dim=-1)
+    t = torch.stack([torch.matrix_power(t, idx) for idx in range(1, args.k+1)], -1)
+    theta = personalized_page_rank(args.alpha, args.k)
+    s = (theta * t).sum(-1, keepdims=True)
 
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].max() + 1,
         hidden_features=args.hidden_features,
         depth=args.depth,
-        residual=args.residual,
-        semantic_weight=args.semantic_weight,
         num_heads=args.num_heads,
-        a_h_drop=args.a_h_dropout,
-        a_x_drop=args.a_x_dropout,
-        fc_drop=args.fc_dropout,
-        epsilon=args.epsilon,
+        adjacency_matrix=a,
+        diffusion_matrix=s,
     )
 
     if torch.cuda.is_available():
@@ -36,20 +38,21 @@ def run(args):
     for _ in range(1000):
         model.train()
         optimizer.zero_grad()
-        y_hat = model(g.ndata['feat'], a)[g.ndata['train_mask']]
+        y_hat = model(g.ndata['feat'])[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
-        loss = torch.nn.CrossEntropyLoss()(y_hat, y)
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y) + model.kl / s.sign().sum() * g.ndata["train_mask"].sum()
         loss.backward()
         optimizer.step()
         model.eval()
 
         with torch.no_grad():
-            y_hat = model(g.ndata["feat"], a)[g.ndata["val_mask"]]
+            y_hat = model(g.ndata["feat"])[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
+            print(accuracy)
 
-            y_hat = model(g.ndata["feat"], a)[g.ndata["test_mask"]]
+            y_hat = model(g.ndata["feat"])[g.ndata["test_mask"]]
             y = g.ndata["label"][g.ndata["test_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_te.append(accuracy)
@@ -79,10 +82,8 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--semantic_weight", type=float, default=-1.0)
     parser.add_argument("--num_heads", type=int, default=1)
-    parser.add_argument("--a_h_dropout", type=float, default=0.0)
-    parser.add_argument("--a_x_dropout", type=float, default=0.0)
-    parser.add_argument("--fc_dropout", type=float, default=0.0)
-    parser.add_argument("--epsilon", type=float, default=1.0)
+    parser.add_argument("--k", type=int, default=1)
+    parser.add_argument("--alpha", type=float, default=0.1)
     args = parser.parse_args()
     print(args)
     run(args)

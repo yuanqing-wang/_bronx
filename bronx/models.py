@@ -8,34 +8,32 @@ class BronxModel(torch.nn.Module):
         hidden_features,
         out_features,
         depth,
+        adjacency_matrix,
+        diffusion_matrix,
         **kwargs,
     ):
         super().__init__()
         self.embedding_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-
-        '''
         layers = []
-        # layers.append(BronxLayer(in_features, hidden_features, hidden_features, **kwargs))
         for _ in range(depth):
             layers.append(
-                BronxLayer(hidden_features, **kwargs),
+                BronxLayer(
+                    hidden_features,
+                    adjacency_matrix=adjacency_matrix,
+                    diffusion_matrix=diffusion_matrix,
+                    **kwargs
+                ),
             )
-        # layers.append(BronxLayer(hidden_features, hidden_features, out_features, last=True, **kwargs))
         self.layers = torch.nn.ModuleList(layers)
-        '''
-
-        self.layer = BronxLayer(hidden_features, **kwargs)
-        self.layers = [self.layer for _ in range(depth)]
 
         self.embedding_out = torch.nn.Linear(hidden_features, out_features, bias=False)
-        self.log_identity_weights = torch.nn.Parameter(torch.tensor(0.0))
 
-    def forward(self, h, a):
-        i = torch.eye(a.shape[-1], device=a.device, dtype=a.dtype)
-        x = a + i * self.log_identity_weights.exp()
+    def forward(self, h):
+        kl = 0.0
         h = self.embedding_in(h)
         for layer in self.layers:
-             h, x = layer(h, x)
-
+             h = layer(h)
+             kl += layer.kl
         h = self.embedding_out(h)
+        self.kl = kl
         return h

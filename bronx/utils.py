@@ -1,3 +1,4 @@
+import torch
 class EarlyStopping(object):
     best_losses = None
     best_state = None
@@ -24,3 +25,10 @@ class EarlyStopping(object):
                 return True
 
         return False
+
+
+
+def personalized_page_rank(alpha, k):
+    result = torch.tensor([alpha * (1 - alpha) ** idx for idx in range(k)])
+    result = torch.nn.functional.normalize(result, p=1.0, dim=0)
+    return result
