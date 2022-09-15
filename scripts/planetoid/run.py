@@ -23,6 +23,8 @@ def run(args):
         num_heads=args.num_heads,
         adjacency_matrix=a,
         diffusion_matrix=s,
+        prior_sigma=args.sigma,
+        n_samples=args.n_samples,
     )
 
     if torch.cuda.is_available():
@@ -35,10 +37,10 @@ def run(args):
     accuracy_te = []
 
     # import tqdm
-    for _ in range(1000):
+    for _ in range(500):
         model.train()
         optimizer.zero_grad()
-        y_hat = model(g.ndata['feat'])[g.ndata['train_mask']]
+        y_hat = model(g.ndata['feat'].unsqueeze(0).repeat(args.n_samples, 1, 1)).softmax(-1).mean(0).log()[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
         loss = torch.nn.CrossEntropyLoss()(y_hat, y) + model.kl / s.sign().sum() * g.ndata["train_mask"].sum()
         loss.backward()
@@ -46,13 +48,12 @@ def run(args):
         model.eval()
 
         with torch.no_grad():
-            y_hat = model(g.ndata["feat"])[g.ndata["val_mask"]]
+            y_hat = model(g.ndata['feat'].unsqueeze(0).repeat(args.n_samples, 1, 1)).softmax(-1).mean(0).log()[g.ndata['val_mask']]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
-            print(accuracy)
 
-            y_hat = model(g.ndata["feat"])[g.ndata["test_mask"]]
+            y_hat = model(g.ndata['feat'].unsqueeze(0).repeat(args.n_samples, 1, 1)).softmax(-1).mean(0).log()[g.ndata['test_mask']]
             y = g.ndata["label"][g.ndata["test_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_te.append(accuracy)
@@ -82,8 +83,10 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--semantic_weight", type=float, default=-1.0)
     parser.add_argument("--num_heads", type=int, default=1)
-    parser.add_argument("--k", type=int, default=1)
+    parser.add_argument("--k", type=int, default=100)
     parser.add_argument("--alpha", type=float, default=0.1)
+    parser.add_argument("--sigma", type=float, default=1.0)
+    parser.add_argument("--n_samples", type=int, default=1)
     args = parser.parse_args()
     print(args)
     run(args)
