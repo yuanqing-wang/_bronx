@@ -14,6 +14,7 @@ def run(args):
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].max() + 1,
         hidden_features=args.hidden_features,
+        depth=2,
     )
 
     if torch.cuda.is_available():
