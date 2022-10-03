@@ -17,7 +17,6 @@ def run(args):
     )
 
     if torch.cuda.is_available():
-        a = a.cuda()
         model = model.cuda()
         g = g.to("cuda:0")
 
@@ -26,7 +25,7 @@ def run(args):
     accuracy_te = []
 
     # import tqdm
-    for _ in range(1000):
+    for epoch_idx in range(1000):
         model.train()
         optimizer.zero_grad()
         y_hat = model(g, g.ndata['feat'])[g.ndata['train_mask']]
@@ -36,12 +35,15 @@ def run(args):
         optimizer.step()
         model.eval()
 
+        if epoch_idx % 10 != 0:
+            continue
+
         with torch.no_grad():
             y_hat = torch.stack([model(g, g.ndata["feat"])[g.ndata["val_mask"]] for _ in range(args.n_samples)]).mean(0)
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
-            print(accuracy)
+            print(accuracy, flush=True)
 
             y_hat = torch.stack([model(g, g.ndata["feat"])[g.ndata["test_mask"]] for _ in range(args.n_samples)]).mean(0)
             y = g.ndata["label"][g.ndata["test_mask"]]
