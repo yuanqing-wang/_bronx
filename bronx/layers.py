@@ -27,20 +27,3 @@ class GraphAttentionLayer(torch.nn.Module):
         g.update_all(dgl.function.u_mul_e("h", "a", "m"), dgl.function.sum("m", "h"))
         h = self.fc(g.ndata["h"]).flatten(-2, -1)
         return h
-
-
-class BronxLayer(torchsde.SDEIto):
-    def __init__(self, hidden_features):
-        super().__init__(noise_type="general")
-        self.gcn = GraphConv(hidden_features + 1, hidden_features)
-        self.graph = None
-
-    def f(self, t, y):
-        t = torch.broadcast_to(t, (*y.shape[:-1], 1))
-        return self.gcn(
-            self.graph,
-            torch.cat([t, y], dim=-1),
-        ) - y
-
-    def g(self, t, y):
-        return 1e-2 * torch.ones_like(y).unsqueeze(-1)
