@@ -1,21 +1,34 @@
 import torch
-from .layers import BronxLayer, GraphAttentionLayer
-import torchsde
+import pyro
+from pyro import poutine
+from .layers import BronxLayer
 
-
-class BronxModel(torch.nn.Module):
+class BronxModel(pyro.nn.PyroModule):
     def __init__(self, in_features, hidden_features, out_features, depth, num_heads=1):
         super().__init__()
-        self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
-        layers = [GraphAttentionLayer(in_features=hidden_features, out_features=hidden_features)]
-        for idx in range(depth-1):
-            layers.append(GraphAttentionLayer(in_features=hidden_features*num_heads, out_features=hidden_features))
-        self.layers = torch.nn.ModuleList(layers)
-    def forward(self, g, h):
+        self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False)
+        self.fc_out = pyro.nn.PyroModule[torch.nn.Linear](hidden_features, out_features, bias=False)
+        layers = []
+        for idx in range(depth):
+            layers.append(
+                BronxLayer(hidden_features, hidden_features)
+            )
+        self.layers = layers
+
+    def model(self, g, h):
         g = g.local_var()
         h = self.fc_in(h)
         for layer in self.layers:
-            h = layer(g, h)
+            h = layer.model(g, h)
         h = self.fc_out(h)
         return h
+        
+    def guide(self, g, h):
+        g = g.local_var()
+        h = self.fc_in(h)
+        for layer in self.layers:
+            e = layer.guide(g, h)
+            h = poutine.condition(layer.model, {"e": e})(g, h)
+
+        
+

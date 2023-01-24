@@ -1,9 +1,81 @@
 from typing import Optional, Callable
 import torch
+import pyro
 import dgl
 from dgl.nn import GraphConv
-import torchsde
+from dgl import function as fn
 from dgl.nn.functional import edge_softmax
+
+class BronxLayer(pyro.nn.PyroModule):
+    def __init__(
+            self, in_features, out_features, 
+            embedding_features=None, num_heads=1
+        ):
+        super().__init__()
+        if embedding_features is None: embedding_features = out_features
+        self.in_features = in_features
+        self.out_features = out_features
+
+        self.fc = pyro.nn.PyroModule[torch.nn.Linear](
+            in_features, out_features
+        )
+
+        self.fc_k = pyro.nn.PyroModule[torch.nn.Linear](
+            in_features, embedding_features,
+        )
+
+        self.fc_q_mu = pyro.nn.PyroModule[torch.nn.Linear](
+            in_features, embedding_features,
+        )
+
+        self.fc_q_log_sigma = pyro.nn.PyroModule[torch.nn.Linear](
+            in_features, embedding_features,
+        )
+
+        self.num_heads = num_heads
+
+    def model(self, g, h):
+        g = g.local_var()
+        e = pyro.sample(
+            "e",
+            pyro.distributions.LogNormal(
+                h.new_ones(g.number_of_edges()),
+                h.new_zeros(g.number_of_edges()).exp(),
+            )
+        )
+        g.ndata["h"] = h
+        g.edata["e"] = e
+        g.edata["e"] = edge_softmax(g, g.edata["e"] / self.out_features ** 0.5)
+        g.update_all(
+            fn.u_mul_e("h", "e", "a"),
+            fn.sum("a", "h"),
+        )
+        h = g.ndata["h"]
+        h = self.fc(h).reshape(*h.shape[:-1], self.num_heads, self.out_features)
+        h = pyro.sample(
+            "h", 
+            pyro.distributions.Delta(h.flatten(-2, -1)),
+        )
+        return h
+
+    def guide(self, g, h):
+        g = g.local_var()
+        k = self.fc_k(h)
+        mu, log_sigma = self.fc_q_mu(h), self.fc_q_log_sigma(h)
+        g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
+        g.apply_edges(fn.u_dot_v("mu", "mu", "mu"))
+        g.apply_edges(
+            fn.u_dot_v("log_sigma", "log_sigma", "log_sigma"),
+        )
+
+        e = pyro.sample(
+            "e",
+            pyro.distributions.LogNormal(
+                g.edata["mu"], g.edata["log_sigma"],
+            )
+        )
+
+        return e
 
 class GraphAttentionLayer(torch.nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, num_heads=1):
