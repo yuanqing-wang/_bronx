@@ -15,12 +15,17 @@ class BronxModel(pyro.nn.PyroModule):
             )
         self.layers = layers
 
-    def model(self, g, h):
+    def model(self, g, h, y=None):
         g = g.local_var()
         h = self.fc_in(h)
         for layer in self.layers:
             h = layer.model(g, h)
-        h = self.fc_out(h)
+        h = self.fc_out(h).softmax(-1)
+        h = pyro.sample(
+            "obs",
+            pyro.distributions.OneHotCategorical(h),
+            obs=y,
+        )
         return h
         
     def guide(self, g, h):
