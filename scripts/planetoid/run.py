@@ -1,8 +1,7 @@
 import numpy as np
 import torch
 import dgl
-from bronx.models import BronxModel
-from bronx.utils import personalized_page_rank
+from bronx.models import BronxModel, BronxODEModel
 
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
@@ -10,11 +9,12 @@ def run(args):
     g = dgl.remove_self_loop(g)
     g = dgl.add_self_loop(g)
 
-    model = BronxModel(
+    model = BronxODEModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].max() + 1,
         hidden_features=args.hidden_features,
-        depth=2,
+        # depth=2,
+        # num_heads=args.num_heads,
     )
 
     if torch.cuda.is_available():
@@ -75,6 +75,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual", type=int, default=1)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--n_samples", type=int, default=4)
+    parser.add_argument("--num_heads", type=int, default=4)
     args = parser.parse_args()
     print(args)
     run(args)
