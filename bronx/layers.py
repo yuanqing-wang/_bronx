@@ -75,7 +75,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
         e = pyro.sample(
             f"e{self.index}",
-            pyro.distributions.LogNormal(
+            pyro.distributions.Normal(
                 g.edata["mu"], g.edata["log_sigma"],
             ).to_event(2)
         )
