@@ -11,9 +11,10 @@ def layer(a, h, w, wk, wq):
     k = h @ wk
     q = h @ wq
     src, dst = a.index
-    a_hat = 
-
-
+    k_src, q_dst = k[src], q[dst]
+    a_hat = (k_src * q_dst).sum(-1)
+    a_hat = sparse.BCOO((a_hat, a.indices), shape=a.shape)
+    h = a_hat @ h
     h = h @ w
     return h
 
@@ -43,10 +44,27 @@ def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0):
                 jnp.ones((h.shape[-1], width)),
             ),
         )
-        h = layer(a, h, w)
+        h = layer(a, h, w, wk, wq)
         h = jax.nn.silu(h)
 
     idx = depth - 1
+
+    wk = numpyro.sample(
+        "WK%s" % idx,
+        dist.Normal(
+            jnp.zeros((h.shape[-1], n_classes)),
+            jnp.ones((h.shape[-1], n_classes)),
+        ),
+    )
+
+    wq = numpyro.sample(
+        "WK%s" % idx,
+        dist.Normal(
+            jnp.zeros((h.shape[-1], width)),
+            jnp.ones((h.shape[-1], width)),
+        ),
+    )
+
     w = numpyro.sample(
         "W%s" % idx,
         dist.Normal(
