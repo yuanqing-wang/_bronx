@@ -7,21 +7,35 @@ import numpyro.distributions as dist
 from numpyro import handlers
 from numpyro.infer import MCMC, NUTS
 
-DEPTH = 8
-WIDTH = 16
+def layer(a, h, w, wk, wq):
+    k = h @ wk
+    q = h @ wq
+    src, dst = a.index
+    a_hat = 
 
-def layer(a, h, w):
-    degrees = a.sum(-1).todense()
-    norm = jnp.expand_dims(degrees ** (-0.5), -1)
-    h = h * norm
+
     h = h @ w
-    h = a @ h
-    h = h * norm
     return h
 
 
-def model(a, h, y=None, mask=None, depth=DEPTH, width=WIDTH, n_classes=0):
+def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0):
     for idx in range(depth - 1):
+        wk = numpyro.sample(
+            "WK%s" % idx,
+            dist.Normal(
+                jnp.zeros((h.shape[-1], width)),
+                jnp.ones((h.shape[-1], width)),
+            ),
+        )
+
+        wq = numpyro.sample(
+            "WK%s" % idx,
+            dist.Normal(
+                jnp.zeros((h.shape[-1], width)),
+                jnp.ones((h.shape[-1], width)),
+            ),
+        )
+
         w = numpyro.sample(
             "W%s" % idx,
             dist.Normal(
