@@ -9,8 +9,6 @@ class BronxModel(pyro.nn.PyroModule):
         self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False)
         self.fc_out = pyro.nn.PyroModule[torch.nn.Linear](hidden_features, out_features, bias=False)
         self.depth = depth
-        # self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        # self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         for idx in range(depth):
             setattr(
                 self,
