@@ -4,7 +4,7 @@ from pyro import poutine
 from .layers import BronxLayer
 
 class BronxModel(pyro.nn.PyroModule):
-    def __init__(self, in_features, hidden_features, out_features, depth, num_heads=1):
+    def __init__(self, in_features, hidden_features, out_features, depth, num_heads=1, activation=torch.nn.SiLU()):
         super().__init__()
         self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False)
         self.fc_out = pyro.nn.PyroModule[torch.nn.Linear](hidden_features, out_features, bias=False)
