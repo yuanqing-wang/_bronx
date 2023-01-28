@@ -1,3 +1,4 @@
+from functools import partial
 import jax
 import jax.numpy as jnp
 from jax.experimental import sparse
@@ -6,7 +7,7 @@ import numpyro.distributions as dist
 from numpyro import handlers
 from numpyro.infer import MCMC, NUTS
 
-DEPTH = 2
+DEPTH = 8
 WIDTH = 16
 
 def layer(a, h, w):
@@ -16,11 +17,10 @@ def layer(a, h, w):
     h = h @ w
     h = a @ h
     h = h * norm
-    h = jax.nn.silu(h)
     return h
 
 
-def model(a, h, y=None, mask=None, depth=DEPTH, width=WIDTH):
+def model(a, h, y=None, mask=None, depth=DEPTH, width=WIDTH, n_classes=0):
     for idx in range(depth - 1):
         w = numpyro.sample(
             "W%s" % idx,
@@ -30,13 +30,14 @@ def model(a, h, y=None, mask=None, depth=DEPTH, width=WIDTH):
             ),
         )
         h = layer(a, h, w)
+        h = jax.nn.silu(h)
 
     idx = depth - 1
     w = numpyro.sample(
         "W%s" % idx,
         dist.Normal(
-            jnp.zeros((h.shape[-1], label.max() + 1)),
-            jnp.ones((h.shape[-1], label.max() + 1)),
+            jnp.zeros((h.shape[-1], n_classes)),
+            jnp.ones((h.shape[-1], n_classes)),
         ),
     )
     h = layer(a, h, w)
@@ -62,7 +63,7 @@ def model(a, h, y=None, mask=None, depth=DEPTH, width=WIDTH):
     return h
 
 
-def run():
+def run(args):
     from dgl.data import CoraGraphDataset
     g = CoraGraphDataset()[0]
     a = sparse.BCOO.fromdense(g.adj().coalesce().to_dense().numpy())
@@ -74,11 +75,15 @@ def run():
         g.ndata["test_mask"].numpy()
     )
 
-    kernel = NUTS(model)
+    global model
+    model = partial(model, n_classes=label.max()+1, width=args.width, depth=args.depth)
+    kernel = NUTS(model, init_strategy=numpyro.infer.init_to_feasible())
     mcmc = MCMC(
         kernel,
-        num_warmup=10,
-        num_samples=10,
+        num_warmup=1000,
+        num_samples=10000,
+        thinning=10,
+
     )
 
     mcmc.run(jax.random.PRNGKey(2666), a, h, label, train_mask)
@@ -90,9 +95,22 @@ def run():
     model_trace = handlers.trace(model).get_trace(a, h, y=None, mask=val_mask)
     y_hat = model_trace["obs"]["value"].mean(0).argmax(-1) 
     y = label[val_mask]
-    accuracy = ((y_hat - y) == 0).sum() / y.shape[0]
-    print(accuracy)
+    accuracy = (((y_hat - y) == 0).sum() / y.shape[0]).item()
 
+    handle = open(args.out, "a")
+    import json
+    args = vars(args)
+    out = args.pop("out")
+    args["accuracy"] = accuracy
+    result = json.dumps(args) + "\n"
+    handle.write(result)
+    handle.close()
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--width", type=int, default=16)
+    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--out", type=str, default="out.txt")
+    args = parser.parse_args()
+    run(args)
