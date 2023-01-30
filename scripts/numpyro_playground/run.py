@@ -50,7 +50,21 @@ def segment_softmax(logits: jnp.ndarray,
   softmax = logits / normalizers
   return softmax
 
-def layer(a, h, w, wk, wq):
+
+def matrix_power_series(a, max_power):
+    result = []
+    eye = a._eye(*a.shape, k=0)
+    a = a - eye
+    for idx in range(max_power):
+        result.append(a + eye)
+        a = a @ a
+    return result
+
+@jax.jit
+def sum_matrix_power_series(power_series, coefficients):
+    return sum(a * h for a, h in zip(power_series, coefficients))
+
+def gat(a, h, w, wk, wq):
     k = h @ wk
     q = h @ wq
     src, dst = a.indices[:, 0], a.indices[:, 1]
@@ -62,25 +76,17 @@ def layer(a, h, w, wk, wq):
     h = h @ w
     return h
 
+def gcn(a, h, w):
+     degrees = a.sum(-1).todense()
+     norm = jnp.expand_dims(degrees ** (-0.5), -1)
+     h = h * norm
+     h = h @ w
+     h = a @ h
+     h = h * norm
+     return h
 
-def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0):
+def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0, layer=gcn):
     for idx in range(depth - 1):
-        wk = numpyro.sample(
-            "WK%s" % idx,
-            dist.Normal(
-                jnp.zeros((h.shape[-1], 4)),
-                jnp.ones((h.shape[-1], 4)),
-            ),
-        )
-
-        wq = numpyro.sample(
-            "WQ%s" % idx,
-            dist.Normal(
-                jnp.zeros((h.shape[-1], 4)),
-                jnp.ones((h.shape[-1], 4)),
-            ),
-        )
-
         w = numpyro.sample(
             "W%s" % idx,
             dist.Normal(
@@ -88,27 +94,10 @@ def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0):
                 jnp.ones((h.shape[-1], width)),
             ),
         )
-        h = layer(a, h, w, wk, wq)
+        h = layer(a, h, w)
         h = jax.nn.silu(h)
 
     idx = depth - 1
-
-    wk = numpyro.sample(
-        "WK%s" % idx,
-        dist.Normal(
-            jnp.zeros((h.shape[-1], 4)),
-            jnp.ones((h.shape[-1], 4)),
-        ),
-    )
-
-    wq = numpyro.sample(
-        "WQ%s" % idx,
-        dist.Normal(
-            jnp.zeros((h.shape[-1], 4)),
-            jnp.ones((h.shape[-1], 4)),
-        ),
-    )
-
     w = numpyro.sample(
         "W%s" % idx,
         dist.Normal(
@@ -116,7 +105,7 @@ def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0):
             jnp.ones((h.shape[-1], n_classes)),
         ),
     )
-    h = layer(a, h, w, wk, wq)
+    h = layer(a, h, w)
     h = jax.nn.softmax(h, -1)
 
     if mask is not None:
@@ -151,15 +140,16 @@ def run(args):
         g.ndata["test_mask"].numpy()
     )
 
+
+
     global model
     model = partial(model, n_classes=label.max()+1, width=args.width, depth=args.depth)
     kernel = NUTS(model, init_strategy=numpyro.infer.init_to_feasible())
     mcmc = MCMC(
         kernel,
-        num_warmup=1000,
-        num_samples=10000,
-        thinning=10,
-
+        num_warmup=2000,
+        num_samples=2000,
+        thinning=5,
     )
 
     mcmc.run(jax.random.PRNGKey(2666), a, h, label, train_mask)
