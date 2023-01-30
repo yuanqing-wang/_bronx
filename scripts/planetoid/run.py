@@ -18,16 +18,12 @@ def run(args):
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
-        depth=2,
+        depth=args.depth,
+        num_heads=args.num_heads,
     )
 
-    # model = BronxLayer(
-    #     in_features=g.ndata["feat"].shape[-1],
-    #     out_features=g.ndata["label"].max() + 1,
-    # )
-
     if torch.cuda.is_available():
-        a = a.cuda()
+        # a = a.cuda()
         model = model.cuda()
         g = g.to("cuda:0")
 
@@ -37,7 +33,7 @@ def run(args):
     accuracy_te = []
 
     import tqdm
-    for idx in range(10000):
+    for idx in range(1000):
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
 
         if idx % 10 != 0:
@@ -53,26 +49,25 @@ def run(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
-            print(accuracy)
 
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
             y = g.ndata["label"][g.ndata["test_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_vl.append(accuracy)
+            accuracy_te.append(accuracy)
 
-    # accuracy_vl = np.array(accuracy_vl)
-    # accuracy_te = np.array(accuracy_te)
+    accuracy_vl = np.array(accuracy_vl)
+    accuracy_te = np.array(accuracy_te)
 
-    # print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
+    print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
 
-    # import pandas as pd
-    # df = vars(args)
-    # df["accuracy_vl"] = accuracy_vl.max()
-    # df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
-    # df = pd.DataFrame.from_dict([df])
-    # import os
-    # header = not os.path.exists("performance.csv")
-    # df.to_csv("performance.csv", mode="a", header=header)
+    import pandas as pd
+    df = vars(args)
+    df["accuracy_vl"] = accuracy_vl.max()
+    df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
+    df = pd.DataFrame.from_dict([df])
+    import os
+    header = not os.path.exists("performance.csv")
+    df.to_csv("performance.csv", mode="a", header=header)
 
 if __name__ == "__main__":
     import argparse
@@ -84,6 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual", type=int, default=1)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--n_samples", type=int, default=4)
+    parser.add_argument("--num_heads", type=int, default=1)
     args = parser.parse_args()
     print(args)
     run(args)
