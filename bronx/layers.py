@@ -1,6 +1,7 @@
 from typing import Optional, Callable
 import torch
 import pyro
+from pyro import poutine
 import dgl
 from dgl.nn import GraphConv
 from dgl import function as fn
@@ -37,7 +38,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def mp(self, g, h, e=None):
         g = g.local_var()
-        h = self.fc(h).reshape(*h.shape[:-1], self.num_heads, self.in_features)
+        h = self.fc(h).reshape(*h.shape[:-1], self.num_heads, self.out_features)
 
         if e is None:
             e = h.new_ones(g.number_of_edges(), self.num_heads, 1)
@@ -53,18 +54,20 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def model(self, g, h):
         g = g.local_var()
-        e = pyro.sample(
-            f"e{self.index}",
-            pyro.distributions.Normal(
-                h.new_zeros(g.number_of_edges(), self.num_heads),
-                h.new_zeros(g.number_of_edges(), self.num_heads).exp(),
-            ).to_event(2)
-        )
+        with pyro.plate(f"_e{self.index}", g.number_of_edges()):
+            e = pyro.sample(
+                f"e{self.index}",
+                pyro.distributions.Normal(
+                    h.new_zeros(g.number_of_edges(), self.num_heads, 1),
+                    h.new_zeros(g.number_of_edges(), self.num_heads, 1).exp(),
+                ).to_event(2)
+            )
         h = self.mp(g, h, e)
         return h
 
     def guide(self, g, h):
         g = g.local_var()
+        h = self.fc(h).reshape(*h.shape[:-1], self.num_heads, self.out_features)
         k = self.fc_k(h)
         mu, log_sigma = self.fc_q_mu(h), self.fc_q_log_sigma(h)
         g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
@@ -73,13 +76,14 @@ class BronxLayer(pyro.nn.PyroModule):
             fn.u_dot_v("log_sigma", "log_sigma", "log_sigma"),
         )
 
-        e = pyro.sample(
-            f"e{self.index}",
-            pyro.distributions.Normal(
-                g.edata["mu"], g.edata["log_sigma"],
-            ).to_event(2)
-        )
-
+        with pyro.plate(f"_e{self.index}", g.number_of_edges()):
+            with poutine.scale(g.number_of_nodes() / g.number_of_edges()):
+                e = pyro.sample(
+                    f"e{self.index}",
+                    pyro.distributions.Normal(
+                        g.edata["mu"], g.edata["log_sigma"].exp(),
+                    ).to_event(2)
+                )
         return e
 
 class GraphAttentionLayer(torch.nn.Module):

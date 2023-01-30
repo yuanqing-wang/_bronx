@@ -9,6 +9,7 @@ class BronxModel(pyro.nn.PyroModule):
         self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False)
         self.fc_out = pyro.nn.PyroModule[torch.nn.Linear](hidden_features, out_features, bias=False)
         self.depth = depth
+        self.activation = activation
         for idx in range(depth):
             setattr(
                 self,
@@ -22,6 +23,7 @@ class BronxModel(pyro.nn.PyroModule):
         for idx in range(self.depth):
             layer = getattr(self, f"layer{idx}")
             h = layer.model(g, h)
+            h = self.activation(h)
         h = self.fc_out(h).softmax(-1)
         if mask is not None:
             h = h[mask]
@@ -30,11 +32,12 @@ class BronxModel(pyro.nn.PyroModule):
                 y = y[mask]
 
         if y is not None: # training
-            h = pyro.sample(
-                "obs",
-                pyro.distributions.OneHotCategorical(h).to_event(1),
-                obs=y,
-            )
+            with pyro.plate("_obs", h.shape[0]):
+                h = pyro.sample(
+                    "obs",
+                    pyro.distributions.OneHotCategorical(h).to_event(1),
+                    obs=y,
+                )
         return h
         
     def guide(self, g, h, y=None, mask=None):
