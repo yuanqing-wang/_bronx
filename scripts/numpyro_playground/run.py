@@ -7,6 +7,7 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro import handlers
 from numpyro.infer import MCMC, NUTS
+import dgl
 
 def segment_softmax(logits: jnp.ndarray,
                     segment_ids: jnp.ndarray,
@@ -60,9 +61,21 @@ def matrix_power_series(a, max_power):
         a = a @ a
     return result
 
-@jax.jit
-def sum_matrix_power_series(power_series, coefficients):
-    return sum(a * h for a, h in zip(power_series, coefficients))
+# @jax.jit
+def sum_matrix_power_series(a, c):
+    target_shape = c.shape + a.shape[1:]
+    broadcast_dimension = [len(c.shape) - 1, len(c.shape), len(c.shape) + 1]
+    a = sparse.bcoo_broadcast_in_dim(
+        a,
+        shape=target_shape,
+        broadcast_dimensions=broadcast_dimension,
+    )
+    c = c[..., jnp.newaxis, jnp.newaxis]
+    a = a * c
+    a = a.sum(-3)
+    return a
+    
+
 
 def gat(a, h, w, wk, wq):
     k = h @ wk
@@ -86,6 +99,9 @@ def gcn(a, h, w):
      return h
 
 def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0, layer=gcn):
+    c = numpyro.sample("c", dist.LogNormal(jnp.ones(3), jnp.ones(3)))
+    a = sum_matrix_power_series(a, c)
+
     for idx in range(depth - 1):
         w = numpyro.sample(
             "W%s" % idx,
@@ -131,7 +147,12 @@ def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0, layer=gcn):
 def run(args):
     from dgl.data import CoraGraphDataset
     g = CoraGraphDataset()[0]
-    a = sparse.BCOO.fromdense(g.adj().coalesce().to_dense().numpy())
+    # a = sparse.BCOO.fromdense(g.adj().coalesce().to_dense().numpy())
+
+    a = [dgl.khop_adj(g, k) for k in range(3)]
+    a = [sparse.BCOO.fromdense(_a.numpy()) for _a in a]
+    a = sparse.sparsify(jnp.stack)(a)
+
     h = g.ndata["feat"].numpy()
     label = g.ndata["label"].numpy()
     train_mask, val_mask, test_mask = (
@@ -141,7 +162,6 @@ def run(args):
     )
 
 
-
     global model
     model = partial(model, n_classes=label.max()+1, width=args.width, depth=args.depth)
     kernel = NUTS(model, init_strategy=numpyro.infer.init_to_feasible())
@@ -149,11 +169,12 @@ def run(args):
         kernel,
         num_warmup=2000,
         num_samples=2000,
-        thinning=5,
+        thinning=50,
     )
 
     mcmc.run(jax.random.PRNGKey(2666), a, h, label, train_mask)
     samples = mcmc.get_samples()
+    print(samples)
     model = handlers.substitute(
         handlers.seed(model, jax.random.PRNGKey(2666)), 
         samples,
