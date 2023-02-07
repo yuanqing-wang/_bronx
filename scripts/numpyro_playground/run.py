@@ -1,4 +1,5 @@
 from functools import partial
+from collections import namedtuple
 from typing import Optional
 import jax
 import jax.numpy as jnp
@@ -6,7 +7,9 @@ from jax.experimental import sparse
 import numpyro
 import numpyro.distributions as dist
 from numpyro import handlers
-from numpyro.infer import MCMC, NUTS
+from numpyro.infer import MCMC, HMC, NUTS
+import tensorflow_probability as tfp
+from numpyro.contrib.tfp.mcmc import TFPKernel
 import dgl
 
 def segment_softmax(logits: jnp.ndarray,
@@ -51,7 +54,6 @@ def segment_softmax(logits: jnp.ndarray,
   softmax = logits / normalizers
   return softmax
 
-
 def matrix_power_series(a, max_power):
     result = []
     eye = a._eye(*a.shape, k=0)
@@ -75,6 +77,20 @@ def sum_matrix_power_series(a, c):
     a = a.sum(-3)
     return a
     
+def sum_matrix_power_series_dense(a, c):
+    target_shape = c.shape + a.shape[1:]
+    broadcast_dimension = [len(c.shape) - 1, len(c.shape), len(c.shape) + 1]
+    a = sparse.bcoo_broadcast_in_dim(
+        a,
+        shape=target_shape,
+        broadcast_dimensions=broadcast_dimension,
+    )
+    c = c[..., jnp.newaxis, jnp.newaxis]
+    a = a * c
+    a = a.sum(-3)
+    return a
+ 
+
 
 
 def gat(a, h, w, wk, wq):
@@ -99,30 +115,42 @@ def gcn(a, h, w):
      return h
 
 def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0, layer=gcn):
-    c = numpyro.sample("c", dist.LogNormal(jnp.ones(3), jnp.ones(3)))
-    a = sum_matrix_power_series(a, c)
+    for idx in range(depth):
+        if idx == depth - 1:
+            out_features = n_classes
+            activation = lambda x: jax.nn.softmax(x, -1)
+        else:
+            out_features = width
+            activation = jax.nn.silu
 
-    for idx in range(depth - 1):
+        c_mu = numpyro.sample(f"c_mu{idx}", dist.LogNormal(jnp.ones(3), jnp.ones(3)))
+        c_sigma = numpyro.sample(f"c_sigma{idx}", dist.LogNormal(jnp.ones(3), jnp.ones(3)))
+        a_mu = sum_matrix_power_series(a, c_mu)
+        a_sigma = sum_matrix_power_series(a, c_sigma)
+
+        epsilon = numpyro.sample(
+            f"espilon{idx}",
+            dist.Normal(
+                jnp.zeros_like(a_mu.data),
+                jnp.ones_like(a_mu.data),
+            ),
+        )
+
+        _a = sparse.BCOO(
+            (epsilon * a_sigma.data + a_mu.data, a_mu.indices),
+            shape=a_mu.shape,
+        )
+
+
         w = numpyro.sample(
             "W%s" % idx,
             dist.Normal(
-                jnp.zeros((h.shape[-1], width)),
-                jnp.ones((h.shape[-1], width)),
+                jnp.zeros((h.shape[-1], out_features)),
+                jnp.ones((h.shape[-1], out_features)),
             ),
         )
-        h = layer(a, h, w)
-        h = jax.nn.silu(h)
-
-    idx = depth - 1
-    w = numpyro.sample(
-        "W%s" % idx,
-        dist.Normal(
-            jnp.zeros((h.shape[-1], n_classes)),
-            jnp.ones((h.shape[-1], n_classes)),
-        ),
-    )
-    h = layer(a, h, w)
-    h = jax.nn.softmax(h, -1)
+        h = layer(_a, h, w)
+        h = activation(h)
 
     if mask is not None:
         h = h[..., mask, :]
@@ -142,6 +170,7 @@ def model(a, h, y=None, mask=None, depth=0, width=0, n_classes=0, layer=gcn):
             dist.Delta(h),
         )
     return h
+
 
 
 def run(args):
@@ -164,17 +193,17 @@ def run(args):
 
     global model
     model = partial(model, n_classes=label.max()+1, width=args.width, depth=args.depth)
-    kernel = NUTS(model, init_strategy=numpyro.infer.init_to_feasible())
+    model = handlers.block(model, lambda site: "epsilon" in site["name"])
+    kernel = NUTS(model=model, init_strategy=numpyro.infer.initialization.init_to_feasible)
     mcmc = MCMC(
         kernel,
         num_warmup=2000,
-        num_samples=2000,
+        num_samples=20000,
         thinning=50,
     )
 
     mcmc.run(jax.random.PRNGKey(2666), a, h, label, train_mask)
     samples = mcmc.get_samples()
-    print(samples)
     model = handlers.substitute(
         handlers.seed(model, jax.random.PRNGKey(2666)), 
         samples,
