@@ -1,4 +1,5 @@
 from typing import Optional, Callable
+from functools import partial
 import torch
 import pyro
 from pyro import poutine
@@ -52,6 +53,7 @@ class BronxLayer(pyro.nn.PyroModule):
         h = g.ndata["h"].flatten(-2, -1)
         return h
 
+    # @partial(poutine.scale, scale=10)
     def model(self, g, h):
         g = g.local_var()
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
@@ -65,6 +67,7 @@ class BronxLayer(pyro.nn.PyroModule):
         h = self.mp(g, h, e)
         return h
 
+
     def guide(self, g, h):
         g = g.local_var()
         h = self.fc(h).reshape(*h.shape[:-1], self.num_heads, self.out_features)
@@ -77,7 +80,7 @@ class BronxLayer(pyro.nn.PyroModule):
         )
 
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
-            with poutine.scale(g.number_of_nodes() / g.number_of_edges()):
+                # with poutine.scale(g.number_of_nodes() / g.number_of_edges()):
                 e = pyro.sample(
                     f"e{self.index}",
                     pyro.distributions.Normal(
