@@ -27,7 +27,7 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = pyro.optim.Adam({"lr": 1e-3})
+    optimizer = pyro.optim.Adam({"lr": args.learning_rate})
     svi = pyro.infer.SVI(model.model, model.guide, optimizer, loss=pyro.infer.Trace_ELBO())
     accuracy_vl = []
     accuracy_te = []
