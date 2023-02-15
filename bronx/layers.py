@@ -38,21 +38,11 @@ class BronxLayer(pyro.nn.PyroModule):
 
         self.num_heads = num_heads
 
-    def mp(self, g, h, e=None):
-        g = g.local_var()
+    def mp(self, a, h):
         h = h.reshape(*h.shape[:-1], self.num_heads, -1)
-
-        if e is None:
-            e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
-
-        g.ndata["h"] = h
-        g.edata["e"] = edge_softmax(g, e / self.out_features ** 0.5)
-        g.update_all(
-            fn.u_mul_e("h", "e", "a"),
-            fn.sum("a", "h"),
-        )
+        h = a @ h
         h = self.fc(h)
-        h = g.ndata["h"].flatten(-2, -1)
+        h = h.flatten(-2, -1)
         return h
 
     def model(self, g, h):
