@@ -10,7 +10,9 @@ python run.py \
     --learning_rate $learning_rate \
     --num_heads $num_heads \
     --depth $depth \
-    --n_samples $n_samples
+    --n_samples $n_samples \
+    --weight_decay $weight_decay \
+    --scale $scale
 
 python upload.py
 

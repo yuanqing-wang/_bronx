@@ -20,7 +20,6 @@ class BronxLayer(pyro.nn.PyroModule):
         self.embedding_features = int(out_features / num_heads)
         self.index = index
 
-
         self.fc = pyro.nn.PyroModule[torch.nn.Linear](
             in_features, out_features
         )

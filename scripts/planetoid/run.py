@@ -20,6 +20,8 @@ def run(args):
         hidden_features=args.hidden_features,
         depth=args.depth,
         num_heads=args.num_heads,
+        # scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes()),
+        scale=args.scale,
     )
 
     if torch.cuda.is_available():
@@ -27,7 +29,7 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = pyro.optim.Adam({"lr": args.learning_rate})
+    optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
     svi = pyro.infer.SVI(model.model, model.guide, optimizer, loss=pyro.infer.Trace_ELBO())
     accuracy_vl = []
     accuracy_te = []
@@ -80,6 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--n_samples", type=int, default=4)
     parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--scale", type=float, default=1.0)
     args = parser.parse_args()
     print(args)
     run(args)
