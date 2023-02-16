@@ -3,15 +3,38 @@ from functools import partial
 import torch
 import pyro
 from pyro import poutine
+from pyro import distributions as dist
 import dgl
 from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
+
+class BayesianLinear(pyro.nn.PyroModule):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.W = pyro.nn.PyroSample(
+            dist.Normal(0, 1).expand([in_features, out_features],)
+        )
+
+        if self.bias:
+            self.B = pyro.nn.PyroParam(
+                torch.zeros(out_features),
+            )
+
+        else:
+            self.B = 0.0
+
+        self.guide = pyro.infer.autoguide.AutoNormal(self)
+
+    def forward(self, x):
+        return x @ self.W + self.B
+
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, in_features, out_features, 
             embedding_features=None, num_heads=1, index=0,
+            bayesian_weights=False,
         ):
         super().__init__()
         if embedding_features is None: embedding_features = out_features
@@ -20,19 +43,24 @@ class BronxLayer(pyro.nn.PyroModule):
         self.embedding_features = int(out_features / num_heads)
         self.index = index
 
-        self.fc = pyro.nn.PyroModule[torch.nn.Linear](
+        if bayesian_weights:
+            Linear = BayesianLinear
+        else:
+            Linear = pyro.nn.PyroModule[torch.nn.Linear]
+
+        self.fc = Linear(
             in_features, out_features
         )
 
-        self.fc_k = pyro.nn.PyroModule[torch.nn.Linear](
+        self.fc_k = Linear(
             in_features, embedding_features, bias=False,
         )
 
-        self.fc_q_mu = pyro.nn.PyroModule[torch.nn.Linear](
+        self.fc_q_mu = Linear(
             in_features, embedding_features, bias=False,
         )
 
-        self.fc_q_log_sigma = pyro.nn.PyroModule[torch.nn.Linear](
+        self.fc_q_log_sigma = Linear(
             in_features, embedding_features, bias=False,
         )
 
