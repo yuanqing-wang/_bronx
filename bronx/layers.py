@@ -53,7 +53,7 @@ class BronxLayer(pyro.nn.PyroModule):
             Linear = pyro.nn.PyroModule[torch.nn.Linear]
 
         self.fc = Linear(
-            in_features, out_features
+            in_features, embedding_features, bias=False, # out_features
         )
 
         self.fc_k = Linear(
@@ -73,7 +73,8 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def mp(self, g, h, e=None):
         g = g.local_var()
-        
+        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
+       
         if e is None:
             e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
             
@@ -83,14 +84,13 @@ class BronxLayer(pyro.nn.PyroModule):
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
         )
-        h = self.fc(h)
-        h = g.ndata["h"].flatten(-2, -1)
+        # h = self.fc(h)
+        h = h.flatten(-2, -1) 
         return h
 
     def forward(self, g, h):
         g = g.local_var()
-        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
-
+        
         with pyro.plate(f"_d{self.index}", self.embedding_features):
             with pyro.plate(f"_e{self.index}", g.number_of_edges()):
                 e = pyro.sample(
@@ -103,8 +103,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
 
         h = self.mp(g, h, e)
-        # h = self.fc(h)
-        # h = h.flatten(-2, -1)
         return h
 
 

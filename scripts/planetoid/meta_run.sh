@@ -1,7 +1,7 @@
-for hidden_features in 32; do
+for hidden_features in 16 32 64 128; do
 for depth in 2; do
 for num_heads in 1; do
-for learning_rate in 1e-3; do
+for learning_rate in 1e-5; do
 for weight_decay in 1e-8; do
 for n_samples in 1; do
 for scale in 1.0; do
