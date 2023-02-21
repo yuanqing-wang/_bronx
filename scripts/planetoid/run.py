@@ -1,7 +1,9 @@
 import numpy as np
 import torch
 import pyro
+from pyro import poutine
 import dgl
+dgl.use_libxsmm(False)
 from bronx.models import BronxModel
 from bronx.layers import BronxLayer
 from bronx.utils import personalized_page_rank
@@ -13,7 +15,6 @@ def run(args):
     g = dgl.add_self_loop(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
-
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
@@ -22,6 +23,7 @@ def run(args):
         num_heads=args.num_heads,
         # scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes()),
         scale=args.scale,
+        bayesian_weights=True,
     )
 
     if torch.cuda.is_available():
@@ -29,8 +31,14 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
+    # guide = pyro.infer.autoguide.AutoGuideList()    
+    # guide.add(pyro.infer.autoguide.AutoNormal(poutine.block(model, lambda x: "weight" not in x["name"])))
+    # guide.add(model.guide)
+    # guide = pyro.infer.autoguide.AutoCallable(model, model.guide)
+    guide = model.guide
+
     optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    svi = pyro.infer.SVI(model.model, model.guide, optimizer, loss=pyro.infer.Trace_ELBO())
+    svi = pyro.infer.SVI(model, guide, optimizer, loss=pyro.infer.Trace_ELBO())
     accuracy_vl = []
     accuracy_te = []
 
@@ -43,7 +51,7 @@ def run(args):
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model.model, guide=model.guide, num_samples=4, 
+                model, guide=model, num_samples=4, 
                 return_sites=["_RETURN"],
             )
             
@@ -75,7 +83,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=16)
+    parser.add_argument("--hidden_features", type=int, default=4)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--residual", type=int, default=1)

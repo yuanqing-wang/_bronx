@@ -7,7 +7,7 @@ class BronxModel(pyro.nn.PyroModule):
     def __init__(
             self, 
             in_features, hidden_features, out_features, depth, num_heads=1, 
-            scale=1.0, activation=torch.nn.SiLU(),
+            scale=1.0, activation=torch.nn.SiLU(), bayesian_weights=False,
         ):
         super().__init__()
         self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False
@@ -20,15 +20,15 @@ class BronxModel(pyro.nn.PyroModule):
             setattr(
                 self,
                 f"layer{idx}",
-                BronxLayer(hidden_features, hidden_features, index=idx)
+                BronxLayer(hidden_features, hidden_features, index=idx, bayesian_weights=bayesian_weights)
             )
 
-    def model(self, g, h, y=None, mask=None):
+    def forward(self, g, h, y=None, mask=None):
         g = g.local_var()
         h = self.fc_in(h)
         for idx in range(self.depth):
             layer = getattr(self, f"layer{idx}")
-            h = poutine.scale(layer.model, self.scale)(g, h)
+            h = poutine.scale(layer, self.scale)(g, h)
             h = self.activation(h)
         h = self.fc_out(h)# .softmax(-1)
         h = h.softmax(-1)

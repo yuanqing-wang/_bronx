@@ -9,26 +9,30 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
+class BayesianLinear(torch.nn.Linear, pyro.nn.PyroModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-class BayesianLinear(pyro.nn.PyroModule):
-    def __init__(self, in_features, out_features, bias=True):
-        super().__init__()
-        self.W = pyro.nn.PyroSample(
-            dist.Normal(0, 1).expand([in_features, out_features],)
-        )
-
-        if self.bias:
-            self.B = pyro.nn.PyroParam(
-                torch.zeros(out_features),
+        if torch.cuda.is_available():
+            self.weight = pyro.nn.PyroSample(
+                dist.Normal(
+                    torch.tensor(0.0, device="cuda:0"),
+                    torch.tensor(1.0, device="cuda:0"),
+                ).expand(self.weight.shape).to_event(2),
             )
 
         else:
-            self.B = 0.0
+
+            self.weight = pyro.nn.PyroSample(
+                dist.Normal(
+                    torch.tensor(0.0),
+                    torch.tensor(1.0),
+                ).expand(self.weight.shape).to_event(2),
+            )
 
         self.guide = pyro.infer.autoguide.AutoNormal(self)
 
-    def forward(self, x):
-        return x @ self.W + self.B
+
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
@@ -65,16 +69,28 @@ class BronxLayer(pyro.nn.PyroModule):
         )
 
         self.num_heads = num_heads
+        self.bayesian_weights = bayesian_weights
 
-    def mp(self, a, h):
-        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
-        h = a @ h
+    def mp(self, g, h, e=None):
+        g = g.local_var()
+        
+        if e is None:
+            e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
+            
+        g.ndata["h"] = h
+        g.edata["e"] = edge_softmax(g, e / self.out_features ** 0.5)
+        g.update_all(
+            fn.u_mul_e("h", "e", "a"),
+            fn.sum("a", "h"),
+        )
         h = self.fc(h)
-        h = h.flatten(-2, -1)
+        h = g.ndata["h"].flatten(-2, -1)
         return h
 
-    def model(self, g, h):
+    def forward(self, g, h):
         g = g.local_var()
+        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
+
         with pyro.plate(f"_d{self.index}", self.embedding_features):
             with pyro.plate(f"_e{self.index}", g.number_of_edges()):
                 e = pyro.sample(
@@ -84,16 +100,21 @@ class BronxLayer(pyro.nn.PyroModule):
                         h.new_ones(size=(),),
                     ).expand([self.num_heads]).to_event(1)
                 ).swapaxes(-1, -2)
-        
+
+
         h = self.mp(g, h, e)
+        # h = self.fc(h)
+        # h = h.flatten(-2, -1)
         return h
 
 
     def guide(self, g, h):
         g = g.local_var()
+
         h = h.reshape(*h.shape[:-1], self.num_heads, -1)
         k = self.fc_k(h)
         mu, log_sigma = self.fc_q_mu(h), self.fc_q_log_sigma(h)
+
         g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
         g.apply_edges(fn.u_dot_v("mu", "mu", "mu"))
         g.apply_edges(
