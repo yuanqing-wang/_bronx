@@ -23,7 +23,7 @@ def run(args):
         num_heads=args.num_heads,
         # scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes()),
         scale=args.scale,
-        bayesian_weights=True,
+        bayesian_weights=False,
     )
 
     if torch.cuda.is_available():
