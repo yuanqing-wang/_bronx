@@ -13,7 +13,6 @@ def run(args):
     g = dgl.add_self_loop(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
-
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],

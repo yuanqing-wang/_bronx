@@ -36,6 +36,8 @@ class BronxLayer(pyro.nn.PyroModule):
             in_features, embedding_features, bias=False,
         )
 
+        self.norm = torch.nn.LayerNorm([num_heads, in_features])
+
         self.num_heads = num_heads
 
     def mp(self, g, h, e=None):
@@ -52,7 +54,7 @@ class BronxLayer(pyro.nn.PyroModule):
             fn.sum("a", "h"),
         )
         h = self.fc(h)
-        h = g.ndata["h"].flatten(-2, -1)
+        h = h.flatten(-2, -1)
         return h
 
     def model(self, g, h):
@@ -74,6 +76,7 @@ class BronxLayer(pyro.nn.PyroModule):
     def guide(self, g, h):
         g = g.local_var()
         h = h.reshape(*h.shape[:-1], self.num_heads, -1)
+        h = self.norm(h)
         k = self.fc_k(h)
         mu, log_sigma = self.fc_q_mu(h), self.fc_q_log_sigma(h)
         g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
