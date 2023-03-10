@@ -55,7 +55,7 @@ class BronxModel(pyro.nn.PyroModule):
             h = self.activation(h)
 
 
-class Baseline(BronxModel):
+class BaselineModel(BronxModel):
     def forward(self, g, h, mask=None):
         g = g.local_var()
         h = self.fc_in(h)
