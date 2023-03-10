@@ -1,6 +1,7 @@
 import torch
 import pyro
 from pyro import poutine
+from .layers import BronxLayer
 
 class BronxModel(pyro.nn.PyroModule):
     def __init__(self, in_features, hidden_features, out_features, depth, num_heads=1, activation

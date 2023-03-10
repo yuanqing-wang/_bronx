@@ -22,8 +22,8 @@ def run(args):
         depth=args.depth,
         num_heads=args.num_heads,
         # scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes()),
-        scale=args.scale,
-        bayesian_weights=False,
+        # scale=args.scale,
+        # bayesian_weights=False,
     )
 
     if torch.cuda.is_available():
@@ -45,6 +45,7 @@ def run(args):
     import tqdm
     for idx in range(1000):
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
+        print(loss)
 
         if idx % 10 != 0:
             continue
