@@ -53,3 +53,18 @@ class BronxModel(pyro.nn.PyroModule):
             e = layer.guide(g, h)
             h = layer.mp(g, h, e)
             h = self.activation(h)
+
+
+class Baseline(BronxModel):
+    def forward(self, g, h, mask=None):
+        g = g.local_var()
+        h = self.fc_in(h)
+        for idx in range(self.depth):
+            layer = getattr(self, f"layer{idx}")
+            h = layer.mp(g, h, e=None)
+            h = self.activation(h)
+        h = self.fc_out(h)# .softmax(-1)
+        h = h.softmax(-1)
+        if mask is not None:
+            h = h[mask]
+        return h
