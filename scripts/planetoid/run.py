@@ -38,14 +38,13 @@ def run(args):
     guide = model.guide
 
     optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    svi = pyro.infer.SVI(model, guide, optimizer, loss=pyro.infer.Trace_ELBO())
+    svi = pyro.infer.SVI(model, guide, optimizer, loss=pyro.infer.Trace_ELBO(num_particles=4))
     accuracy_vl = []
     accuracy_te = []
 
     import tqdm
     for idx in range(1000):
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
-        print(loss)
 
         if idx % 10 != 0:
             continue

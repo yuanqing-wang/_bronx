@@ -7,16 +7,18 @@ class BronxModel(pyro.nn.PyroModule):
     def __init__(self, in_features, hidden_features, out_features, depth, num_heads=1, activation
 =torch.nn.SiLU()):
         super().__init__()
-        self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False
-)
+        self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False)
         self.fc_out = pyro.nn.PyroModule[torch.nn.Linear](hidden_features, out_features, bias=False)
         self.depth = depth
         self.activation = activation
         for idx in range(depth):
+            _in_features = _out_features = hidden_features
+            # if idx == 0: _in_features = in_features
+            # if idx + 1 == self.depth: _out_features = out_features
             setattr(
                 self,
                 f"layer{idx}",
-                BronxLayer(hidden_features, hidden_features, index=idx)
+                BronxLayer(_in_features, _out_features, index=idx)
             )
 
     def model(self, g, h, y=None, mask=None):
@@ -53,7 +55,6 @@ class BronxModel(pyro.nn.PyroModule):
             e = layer.guide(g, h)
             h = layer.mp(g, h, e)
             h = self.activation(h)
-
 
 class BaselineModel(BronxModel):
     def forward(self, g, h, mask=None):
