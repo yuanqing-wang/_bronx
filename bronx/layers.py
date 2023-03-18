@@ -46,13 +46,14 @@ class BronxLayer(pyro.nn.PyroModule):
         h = self.fc(h)
         g.ndata["h"] = h
         e = e / self.embedding_features ** 0.5
+        g.edata["e"] = e + 1e-8
         g.update_all(
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
         )
         g.update_all(
             fn.copy_e("e", "m"),
-            fn.sum("e", "e_sum")
+            fn.sum("m", "e_sum")
         )
         h = g.ndata["h"] / g.ndata["e_sum"]
         h = h.flatten(-2, -1)
