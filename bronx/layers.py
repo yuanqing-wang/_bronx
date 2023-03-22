@@ -51,11 +51,11 @@ class BronxLayer(pyro.nn.PyroModule):
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
         )
-        g.update_all(
-            fn.copy_e("e", "m"),
-            fn.sum("m", "e_sum")
-        )
-        h = g.ndata["h"] / g.ndata["e_sum"]
+        # g.update_all(
+        #     fn.copy_e("e", "m"),
+        #     fn.sum("e", "e_sum")
+        # )
+        # h = g.ndata["h"] / g.ndata["e_sum"]
         h = h.flatten(-2, -1)
         return h
 
