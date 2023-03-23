@@ -66,7 +66,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
             e = pyro.sample(
                 f"e{self.index}",
-                pyro.distributions.Beta(
+                pyro.distributions.LogNormal(
                     0.5 * h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
                     0.5 * h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
                 ).to_event(2)
@@ -77,7 +77,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def guide(self, g, h):
         g = g.local_var()
-        print(h.shape)
         h = self.fc(h)
         h = h.reshape(*h.shape[:-1], self.num_heads, -1)
         k = self.fc_k(h)
@@ -91,7 +90,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
             e = pyro.sample(
                 f"e{self.index}",
-                pyro.distributions.Beta(
+                pyro.distributions.LogNormal(
                     g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(), 
                     g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(),
                 ).to_event(2)
