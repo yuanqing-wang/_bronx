@@ -71,12 +71,13 @@ class BronxLayer(pyro.nn.PyroModule):
                     h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
                 ).to_event(2)
             )
-       
+
         h = self.mp(g, h, e)
         return h
 
     def guide(self, g, h):
         g = g.local_var()
+        print(h.shape)
         h = self.fc(h)
         h = h.reshape(*h.shape[:-1], self.num_heads, -1)
         k = self.fc_k(h)
@@ -95,4 +96,5 @@ class BronxLayer(pyro.nn.PyroModule):
                     g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(),
                 ).to_event(2)
             )
+            print(e.shape)
         return e
