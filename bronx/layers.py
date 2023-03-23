@@ -52,10 +52,10 @@ class BronxLayer(pyro.nn.PyroModule):
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
         )
-        g.update_all(
-            fn.copy_e("e", "m"),
-            fn.sum("m", "e_sum")
-        )
+        # g.update_all(
+        #     fn.copy_e("e", "m"),
+        #     fn.sum("m", "e_sum")
+        # )
         h = g.ndata["h"] # / (g.ndata["e_sum"].relu() + 1e-5)
         h = h.flatten(-2, -1)
         return h
@@ -66,9 +66,9 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
             e = pyro.sample(
                 f"e{self.index}",
-                pyro.distributions.LogNormal(
-                    h.new_zeros(size=(g.number_of_edges(), self.num_heads, self.out_features),),
-                    h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
+                pyro.distributions.Beta(
+                    0.5 * h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
+                    0.5 * h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
                 ).to_event(2)
             )
        
@@ -90,9 +90,9 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
             e = pyro.sample(
                 f"e{self.index}",
-                pyro.distributions.LogNormal(
-                    g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features), 
+                pyro.distributions.Beta(
+                    g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(), 
                     g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(),
                 ).to_event(2)
-            )
+            ).relu()
         return e
