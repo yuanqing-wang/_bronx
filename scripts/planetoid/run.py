@@ -3,7 +3,7 @@ import torch
 import pyro
 from pyro import poutine
 import dgl
-# dgl.use_libxsmm(False)
+dgl.use_libxsmm(False)
 from bronx.models import BronxModel
 from bronx.layers import BronxLayer
 from bronx.utils import personalized_page_rank
@@ -43,7 +43,7 @@ def run(args):
     accuracy_te = []
 
     import tqdm
-    for idx in range(100):
+    for idx in range(1000):
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
 
         if idx % 10 != 0:

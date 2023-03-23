@@ -1,0 +1,3 @@
+,data,hidden_features,learning_rate,depth,residual,weight_decay,n_samples,num_heads,scale,accuracy_vl,accuracy_te
+0,cora,32,0.001,2,1,1e-08,1,1,1.0,0.214,0.224
+0,cora,32,0.001,2,1,1e-08,1,1,1.0,0.35,0.338

@@ -44,7 +44,7 @@ class BronxLayer(pyro.nn.PyroModule):
         if e is None:
             e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
         h = self.fc(h)
-        g.ndata["h"] = h / g.out_degrees().unsqueeze(-1)
+        g.ndata["h"] = h / g.out_degrees().unsqueeze(-1).unsqueeze(-1)
         # g.edata["e"] = edge_softmax(g, e / self.embedding_features ** 0.5)
 
         g.edata["e"] = e / self.embedding_features ** 0.5
@@ -77,7 +77,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def guide(self, g, h):
         g = g.local_var()
-        print(h.shape)
         h = self.fc(h)
         h = h.reshape(*h.shape[:-1], self.num_heads, -1)
         k = self.fc_k(h)
@@ -96,5 +95,4 @@ class BronxLayer(pyro.nn.PyroModule):
                     g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(),
                 ).to_event(2)
             )
-            print(e.shape)
         return e
