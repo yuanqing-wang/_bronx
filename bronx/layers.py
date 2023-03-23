@@ -45,7 +45,7 @@ class BronxLayer(pyro.nn.PyroModule):
             e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
         h = self.fc(h)
         g.ndata["h"] = h / g.in_degrees().unsqueeze(-1)
-        g.edata["e"] = edge_softamx(g, e / self.embedding_features ** 0.5)
+        g.edata["e"] = edge_softmax(g, e / self.embedding_features ** 0.5)
         g.update_all(
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
