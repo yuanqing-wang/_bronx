@@ -6,7 +6,7 @@ from pyro import poutine
 import dgl
 from dgl.nn import GraphConv
 from dgl import function as fn
-from dgl.nn.functional import edge_softmax
+# from dgl.nn.functional import edge_softmax
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
@@ -44,8 +44,8 @@ class BronxLayer(pyro.nn.PyroModule):
         if e is None:
             e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
         h = self.fc(h)
-        g.ndata["h"] = h
-        e = e / self.embedding_features ** 0.5
+        g.ndata["h"] = h / g.in_degrees().unsqueeze(-1)
+        g.edata["e"] = e / self.embedding_features ** 0.5
         g.update_all(
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
@@ -89,8 +89,8 @@ class BronxLayer(pyro.nn.PyroModule):
             e = pyro.sample(
                 f"e{self.index}",
                 pyro.distributions.LogNormal(
-                    g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features), 
-                    g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features).exp(),
+                    g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features).sigmoid(), 
+                    g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features).sigmoid().exp(),
                 ).to_event(2)
             )
         return e

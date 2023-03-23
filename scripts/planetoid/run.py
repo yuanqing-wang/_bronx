@@ -3,7 +3,7 @@ import torch
 import pyro
 from pyro import poutine
 import dgl
-dgl.use_libxsmm(False)
+# dgl.use_libxsmm(False)
 from bronx.models import BronxModel
 from bronx.layers import BronxLayer
 from bronx.utils import personalized_page_rank
@@ -43,7 +43,7 @@ def run(args):
     accuracy_te = []
 
     import tqdm
-    for idx in range(1000):
+    for idx in range(100):
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
 
         if idx % 10 != 0:
@@ -59,6 +59,7 @@ def run(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
+            print(accuracy)
 
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
             y = g.ndata["label"][g.ndata["test_mask"]]
