@@ -31,11 +31,11 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    # guide = pyro.infer.autoguide.AutoGuideList()    
-    # guide.add(pyro.infer.autoguide.AutoNormal(poutine.block(model, lambda x: "weight" not in x["name"])))
-    # guide.add(model.guide)
+    guide = pyro.infer.autoguide.AutoGuideList(model)    
+    guide.add(pyro.infer.autoguide.AutoNormal(poutine.block(model, hide_fn=lambda x: "weight" not in x["name"])))
+    guide.add(poutine.block(model.guide, expose_fn=lambda x: x["name"].startswith("e")))
     # guide = pyro.infer.autoguide.AutoCallable(model, model.guide)
-    guide = model.guide
+    # guide = model.guide
 
     optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
     svi = pyro.infer.SVI(model, guide, optimizer, loss=pyro.infer.Trace_ELBO(num_particles=4))
@@ -52,7 +52,7 @@ def run(args):
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
                 model, guide=model, num_samples=4, 
-                return_sites=["_RETURN"],
+                return_sites=["_RETURN"], parallel=True,
             )
             
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])["_RETURN"].mean(0)
@@ -84,11 +84,10 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=4)
-    parser.add_argument("--learning_rate", type=float, default=1e-2)
+    parser.add_argument("--hidden_features", type=int, default=16)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--depth", type=int, default=2)
-    parser.add_argument("--residual", type=int, default=1)
-    parser.add_argument("--weight_decay", type=float, default=1e-10)
+    parser.add_argument("--weight_decay", type=float, default=1e-8)
     parser.add_argument("--n_samples", type=int, default=4)
     parser.add_argument("--num_heads", type=int, default=1)
     parser.add_argument("--scale", type=float, default=1.0)
