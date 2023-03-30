@@ -40,7 +40,8 @@ class BronxModel(pyro.nn.PyroModule):
         parameter_shapes = OrderedDict()
 
         for name, parameter in self.named_parameters():
-            parameter_shapes[name] = parameter.shape
+            if "weight" in name:
+                parameter_shapes[name] = parameter.shape
 
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -48,16 +49,16 @@ class BronxModel(pyro.nn.PyroModule):
             device = torch.device("cpu")
         
         for name, shape in parameter_shapes.items():
-            rsetattr(
-                self,
-                name,
-                pyro.nn.PyroSample(
-                    pyro.distributions.Normal(
-                        parameter.new_zeros(shape, device=device),
-                        parameter.new_ones(shape, device=device),
-                    ).to_event(len(shape)),
+                rsetattr(
+                    self,
+                    name,
+                    pyro.nn.PyroSample(
+                        pyro.distributions.Normal(
+                            parameter.new_zeros(shape, device=device),
+                            parameter.new_ones(shape, device=device),
+                        ).to_event(len(shape)),
+                    )
                 )
-            )
 
 
 
