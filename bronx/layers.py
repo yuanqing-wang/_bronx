@@ -45,7 +45,7 @@ class BronxLayer(pyro.nn.PyroModule):
             e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
         h = self.fc(h)
         g.ndata["h"] = h
-        g.edata["e"] = e / self.embedding_features ** 0.5
+        g.edata["e"] = edge_softmax(g, e / self.embedding_features ** 0.5)
         g.update_all(
             fn.u_mul_e("h", "e", "a"),
             fn.sum("a", "h"),
@@ -64,7 +64,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
             e = pyro.sample(
                 f"e{self.index}",
-                pyro.distributions.LogNormal(
+                pyro.distributions.Normal(
                     h.new_zeros(size=(g.number_of_edges(), self.num_heads, self.out_features),),
                     h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
                 ).to_event(2)
@@ -88,7 +88,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(f"_e{self.index}", g.number_of_edges()):
             e = pyro.sample(
                 f"e{self.index}",
-                pyro.distributions.LogNormal(
+                pyro.distributions.Normal(
                     g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features), 
                     torch.nn.functional.softplus(g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features)),
                 ).to_event(2)

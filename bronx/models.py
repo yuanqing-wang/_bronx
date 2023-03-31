@@ -33,7 +33,7 @@ class BronxModel(pyro.nn.PyroModule):
                 BronxLayer(_in_features, _out_features, index=idx)
             )
 
-        self.prior()
+        # self.prior()
     
     def prior(self):
         # specify the prior distribution for the parameters
