@@ -8,6 +8,7 @@ from bronx.models import BronxModel
 from bronx.layers import BronxLayer
 from bronx.utils import personalized_page_rank
 
+
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
@@ -15,7 +16,7 @@ def run(args):
     g = dgl.add_self_loop(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
-    model = BronxModel(
+    model = BronxODEModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
@@ -49,6 +50,10 @@ def run(args):
         if idx % 10 != 0:
             continue
 
+
+        if epoch_idx % 10 != 0:
+            continue
+
         with torch.no_grad():
             # predictive = pyro.infer.Predictive(
             #     model, guide=guide, num_samples=4, 
@@ -66,7 +71,7 @@ def run(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
-            print(accuracy)
+            print(accuracy, flush=True)
 
             y_hat = torch.stack([
                 poutine.replay(
