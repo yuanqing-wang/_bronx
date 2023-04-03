@@ -1,46 +1,96 @@
 from typing import Optional, Callable
+from functools import partial
 import torch
+import pyro
+from pyro import poutine
 import dgl
 from dgl.nn import GraphConv
-import torchsde
+from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-class GraphAttentionLayer(torch.nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, num_heads=1):
+class BronxLayer(pyro.nn.PyroModule):
+    def __init__(
+            self, in_features, out_features, 
+            embedding_features=None, num_heads=1, index=0,
+        ):
         super().__init__()
-        if out_features is None: out_features = in_features
-        if hidden_features is None: hidden_features = out_features
-        self.fc_k = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_q = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc = torch.nn.Linear(in_features, out_features)
+        if embedding_features is None: embedding_features = out_features
+        self.in_features = in_features
+        self.out_features = out_features
+        self.embedding_features = int(out_features / num_heads)
+        self.index = index
+
+        self.fc = pyro.nn.PyroModule[torch.nn.Linear](
+            in_features, out_features, bias=False,
+        )
+
+        self.fc_k = pyro.nn.PyroModule[torch.nn.Linear](
+            embedding_features, embedding_features, bias=False,
+        )
+
+        self.fc_q_mu = pyro.nn.PyroModule[torch.nn.Linear](
+            embedding_features, embedding_features, bias=False,
+        )
+
+        self.fc_q_log_sigma = pyro.nn.PyroModule[torch.nn.Linear](
+            embedding_features, embedding_features, bias=False,
+        )
+
         self.num_heads = num_heads
 
-    def forward(self, g, h):
+    def mp(self, g, h, e=None):
         g = g.local_var()
-        k = self.fc_k(h).reshape(*h.shape[:-1], self.num_heads, -1)
-        q = self.fc_q(h).reshape(*h.shape[:-1], self.num_heads, -1)
-        g.ndata["k"] = k
-        g.ndata["q"] = q
-        g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
-        g.edata["a"] = edge_softmax(g, g.edata["e"])
+        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
+        if e is None:
+            e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
+        h = self.fc(h)
         g.ndata["h"] = h
-        g.update_all(dgl.function.u_mul_e("h", "a", "m"), dgl.function.sum("m", "h"))
-        h = self.fc(g.ndata["h"]).flatten(-2, -1)
+        g.edata["e"] = edge_softmax(g, e / self.embedding_features ** 0.5)
+        g.update_all(
+            fn.u_mul_e("h", "e", "a"),
+            fn.sum("a", "h"),
+        )
+        g.update_all(
+            fn.copy_e("e", "m"),
+            fn.sum("m", "e_sum")
+        )
+        h = g.ndata["h"] / (g.ndata["e_sum"].relu() + 1e-8)
+        h = h.flatten(-2, -1)
         return h
 
+    def model(self, g, h):
+        g = g.local_var()
 
-class BronxLayer(torchsde.SDEIto):
-    def __init__(self, hidden_features):
-        super().__init__(noise_type="general")
-        self.gcn = GraphConv(hidden_features + 1, hidden_features)
-        self.graph = None
+        with pyro.plate(f"_e{self.index}", g.number_of_edges()):
+            e = pyro.sample(
+                f"e{self.index}",
+                pyro.distributions.Normal(
+                    h.new_zeros(size=(g.number_of_edges(), self.num_heads, self.out_features),),
+                    h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
+                ).to_event(2)
+            )
 
-    def f(self, t, y):
-        t = torch.broadcast_to(t, (*y.shape[:-1], 1))
-        return self.gcn(
-            self.graph,
-            torch.cat([t, y], dim=-1),
-        ) - y
+        h = self.mp(g, h, e)
+        return h
 
-    def g(self, t, y):
-        return 1e-2 * torch.ones_like(y).unsqueeze(-1)
+    def guide(self, g, h):
+        g = g.local_var()
+        h = self.fc(h)
+        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
+        k = self.fc_k(h)# .tanh()
+        mu, log_sigma = self.fc_q_mu(h).tanh(), self.fc_q_log_sigma(h).tanh()
+        g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
+        g.apply_edges(fn.u_dot_v("mu", "mu", "mu"))
+        g.apply_edges(
+            fn.u_dot_v("log_sigma", "log_sigma", "log_sigma"),
+        )
+
+        with pyro.plate(f"_e{self.index}", g.number_of_edges()):
+            e = pyro.sample(
+                f"e{self.index}",
+                pyro.distributions.Normal(
+                    g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features), 
+                    torch.nn.functional.softplus(g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features)),
+                ).to_event(2)
+            ).relu()
+        return e
