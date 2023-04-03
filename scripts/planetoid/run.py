@@ -16,7 +16,7 @@ def run(args):
     g = dgl.add_self_loop(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
-    model = BronxODEModel(
+    model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
@@ -48,10 +48,6 @@ def run(args):
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
 
         if idx % 10 != 0:
-            continue
-
-
-        if epoch_idx % 10 != 0:
             continue
 
         with torch.no_grad():
