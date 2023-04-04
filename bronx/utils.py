@@ -1,4 +1,33 @@
 import torch
+
+def candidates(g, k):
+    import dgl
+    import torch
+    candidates = [g] + [dgl.khop_graph(g, k) for k in range(2, k+1)]
+    g_ref = candidates[-1]
+    src_ref, dst_ref = g_ref.edges()
+    for g in candidates:
+        src, dst = g.edges()
+        idxs = torch.logical_and(
+            src.unsqueeze(-1) == src_ref.unsqueeze(0),
+            dst.unsqueeze(-1) == dst_ref.unsqueeze(0)
+        )
+        idxs = (1 * idxs).argmax(-1)
+        g.edata["idxs"] = idxs
+    return candidates        
+
+def combine(candidates, coefficients):
+    candidates = [g.local_var() for g in candidates]
+    g_ref = candidates[-1]
+    g_ref.edata["e"] = torch.ones(g_ref.num_edges(), device=g_ref.device) * coefficients[-1]
+    for candidate, coefficient in zip(candidates[:-1], coefficients[:-1]):
+        g_ref.edata["e"] = g_ref.edata["e"].scatter_add(
+            dim=0,
+            index=candidate.edata["idxs"].long(),
+            src=torch.ones(g_ref.num_edges(), device=g_ref.device) * coefficient
+        )
+    return g_ref
+
 class EarlyStopping(object):
     best_losses = None
     best_state = None
