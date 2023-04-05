@@ -1,9 +1,10 @@
 import torch
 
-def candidates(g, k):
+def get_candidates(g, k):
     import dgl
     import torch
     candidates = [g] + [dgl.khop_graph(g, k) for k in range(2, k+1)]
+    print(candidates)
     g_ref = candidates[-1]
     src_ref, dst_ref = g_ref.edges()
     for g in candidates:

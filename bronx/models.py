@@ -3,8 +3,8 @@ import torch
 import pyro
 from pyro import poutine
 from .layers import BronxLayer
-
 import functools
+from .utils import get_candidates, combine
 
 def rsetattr(obj, attr, val):
     pre, _, post = attr.rpartition('.')
@@ -15,9 +15,28 @@ def rgetattr(obj, attr, *args):
         return getattr(obj, attr, *args)
     return functools.reduce(_getattr, [obj] + attr.split('.'))
 
+class Rewiring(pyro.nn.PyroModule):
+    def __init__(self, n_weights):
+        super().__init__()
+        if torch.cuda.is_available():
+            device = "cuda:0"
+        else:
+            device = "cpu"
+        self.weights = pyro.nn.PyroSample(
+            pyro.distributions.Normal(
+                torch.zeros(n_weights, device=device),
+                torch.ones(n_weights, device=device)
+            ).to_event(1)
+        )
+
+    def forward(self, candidates):
+        return combine(candidates, self.weights)
+
 class BronxModel(pyro.nn.PyroModule):
-    def __init__(self, in_features, hidden_features, out_features, depth, num_heads=1, activation
-=torch.nn.SiLU()):
+    def __init__(
+            self, in_features, hidden_features, out_features, depth, 
+            num_heads=1, activation=torch.nn.SiLU(), n_weights=1,
+        ):
         super().__init__()
         self.fc_in = pyro.nn.PyroModule[torch.nn.Linear](in_features, hidden_features, bias=False)
         self.fc_out = pyro.nn.PyroModule[torch.nn.Linear](hidden_features, out_features, bias=False)
@@ -34,6 +53,7 @@ class BronxModel(pyro.nn.PyroModule):
             )
 
         # self.prior()
+        self.rewiring = Rewiring(n_weights)
     
     def prior(self):
         # specify the prior distribution for the parameters
@@ -62,8 +82,8 @@ class BronxModel(pyro.nn.PyroModule):
 
 
 
-    def model(self, g, h, y=None, mask=None):
-        g = g.local_var()
+    def model(self, candidates, h, y=None, mask=None):
+        g = self.rewiring(candidates)
         h = self.fc_in(h)
         for idx in range(self.depth):
             layer = getattr(self, f"layer{idx}")
@@ -88,8 +108,8 @@ class BronxModel(pyro.nn.PyroModule):
         
     forward = model
 
-    def guide(self, g, h, y=None, mask=None):
-        g = g.local_var()
+    def guide(self, candidates, h, y=None, mask=None):
+        g = self.rewiring(candidates)
         h = self.fc_in(h)
         for idx in range(self.depth):
             layer = getattr(self, f"layer{idx}")

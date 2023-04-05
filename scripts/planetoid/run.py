@@ -6,7 +6,7 @@ import dgl
 dgl.use_libxsmm(False)
 from bronx.models import BronxModel
 from bronx.layers import BronxLayer
-from bronx.utils import personalized_page_rank
+from bronx.utils import get_candidates
 
 
 def run(args):
@@ -15,6 +15,9 @@ def run(args):
     g = dgl.remove_self_loop(g)
     g = dgl.add_self_loop(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
+    candidates = get_candidates(g, 2)
+    print(candidates)
+    fuck
 
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
@@ -45,7 +48,7 @@ def run(args):
 
     import tqdm
     for idx in range(3000):
-        loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
+        loss = svi.step(candidates, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
 
         if idx % 10 != 0:
             continue
@@ -60,7 +63,7 @@ def run(args):
                 poutine.replay(
                     model, 
                     poutine.trace(guide).get_trace(g, g.ndata["feat"], mask=g.ndata["val_mask"]),
-                )(g, g.ndata["feat"], mask=g.ndata["val_mask"])
+                )(candidates, g.ndata["feat"], mask=g.ndata["val_mask"])
                 for _ in range(args.n_samples)
             ]).mean(0)
 
@@ -73,7 +76,7 @@ def run(args):
                 poutine.replay(
                     model, 
                     poutine.trace(guide).get_trace(g, g.ndata["feat"], mask=g.ndata["test_mask"]),
-                )(g, g.ndata["feat"], mask=g.ndata["test_mask"])
+                )(candidates, g.ndata["feat"], mask=g.ndata["test_mask"])
                 for _ in range(args.n_samples)
             ]).mean(0)
 
