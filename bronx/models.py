@@ -4,17 +4,18 @@ import torchsde
 from torchsde import BrownianInterval
 
 class BronxModel(torch.nn.Module):
-    def __init__(self, in_features, hidden_features, out_features):
+    def __init__(self, in_features, hidden_features, out_features, num_heads=1, dropout=0.0):
         super().__init__()
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.sde = BronxLayer(hidden_features)
+        self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, g, h):
         self.sde.graph = g
-        h = self.fc_in(h)
+        h = self.fc_in(h).tanh()
         t = torch.tensor([0.0, 1.0], device=h.device)
-        h = torchsde.sdeint(
+        h, kl = torchsde.sdeint(
             self.sde, 
             h, 
             t,
@@ -25,8 +26,12 @@ class BronxModel(torch.nn.Module):
                 device=h.device,
                 cache_size=None,
                 pool_size=4,
-            )
+            ),
+            dt=0.1,
+            logqp=True,
+        )
 
-        )[-1]
+        h = h[-1]
+        h = self.dropout(h)
         h = self.fc_out(h)
-        return h
+        return h, kl
