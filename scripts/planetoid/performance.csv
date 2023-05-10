@@ -1,0 +1,2 @@
+,data,hidden_features,learning_rate,weight_decay,num_heads,dropout,accuracy_vl,accuracy_te
+0,cora,32,0.01,0.0001,2,0.2,0.714,0.709
