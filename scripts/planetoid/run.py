@@ -8,14 +8,17 @@ def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
+    # g.ndata["feat"] = torch.cat([g.ndata["feat"], dgl.random_walk_pe(g, 20)], dim=-1)
+    g = dgl.add_self_loop(g)
 
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].max() + 1,
         hidden_features=args.hidden_features,
         num_heads=args.num_heads,
-        dropout=args.dropout,
+        dropout0=args.dropout0,
+        dropout1=args.dropout1,
+        gamma=args.gamma,
     )
 
     if torch.cuda.is_available():
@@ -23,11 +26,12 @@ def run(args):
         g = g.to("cuda:0")
 
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 200)
     accuracy_vl = []
     accuracy_te = []
 
     # import tqdm
-    for idx_epoch in range(200):
+    for idx_epoch in range(50):
         model.train()
         optimizer.zero_grad()
         y_hat, kl = model(g, g.ndata['feat'])
@@ -37,9 +41,10 @@ def run(args):
         loss = torch.nn.CrossEntropyLoss()(y_hat, y) + kl.mean()
         loss.backward()
         optimizer.step()
+        # scheduler.step()
         model.eval()
 
-        if idx_epoch % 10 != 0:
+        if idx_epoch % 10 !=0 :
             continue
 
         with torch.no_grad():
@@ -74,11 +79,13 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=32)
+    parser.add_argument("--hidden_features", type=int, default=256)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--num_heads", type=float, default=2)
-    parser.add_argument("--dropout", type=float, default=0.2)
+    parser.add_argument("--num_heads", type=float, default=4)
+    parser.add_argument("--dropout0", type=float, default=0.6)
+    parser.add_argument("--dropout1", type=float, default=0.6)
+    parser.add_argument("--gamma", type=float, default=0.2)
     args = parser.parse_args()
     print(args)
     run(args)
