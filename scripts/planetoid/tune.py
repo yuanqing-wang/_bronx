@@ -1,10 +1,13 @@
+import os
 from types import SimpleNamespace
 import numpy as np
 import torch
 import dgl
-from ray import tune, air
+import ray
+from ray import tune, air, train
 from ray.tune.trainable import session
 from ray.tune.search.optuna import OptunaSearch
+from ray.tune.schedulers import AsyncHyperBandScheduler
 from bronx.models import BronxModel
 
 def objective(args):
@@ -28,7 +31,7 @@ def objective(args):
         g = g.to("cuda:0")
 
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
-
+    accuracy = 0.0
     while True:
         model.train()
         optimizer.zero_grad()
@@ -36,7 +39,7 @@ def objective(args):
         y_hat = y_hat[g.ndata['train_mask']]
         kl = kl.squeeze(-2)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
-        loss = torch.nn.CrossEntropyLoss()(y_hat, y) + kl.mean()
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y) # + kl.mean()
         loss.backward()
         optimizer.step()
         model.eval()
@@ -45,10 +48,12 @@ def objective(args):
             y_hat, _ = model(g, g.ndata["feat"])
             y_hat = y_hat[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-            session.report({"accuracy": accuracy})
+            accuracy = max(accuracy, float((y_hat.argmax(-1) == y).sum()) / len(y_hat))
+            session.report({"mean_accuracy": accuracy})
 
 def run():
+    ray.init(num_cpus=int(os.environ["LSB_DJOB_NUMPROC"]))
+    scheduler = AsyncHyperBandScheduler(time_attr="training_iteration")
     param_space = {
         "data": tune.choice(["cora"]),
         "hidden_features": tune.qlograndint(16, 512, 1),
@@ -60,12 +65,14 @@ def run():
     }
 
     tune_config = tune.TuneConfig(
-        metric="accuracy",
+        metric="_metric/mean_accuracy",
         mode="max",
         search_alg=OptunaSearch(),
+        # scheduler=scheduler,
+        num_samples=100,
     )
 
-    run_config=air.RunConfig(stop={"training_iteration": 50})
+    run_config=air.RunConfig(stop={"training_iteration": 100})
 
     tuner = tune.Tuner(
         objective,

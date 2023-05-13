@@ -17,23 +17,23 @@ class BronxModel(torch.nn.Module):
         self.dropout1 = torch.nn.Dropout(dropout1)
 
     def forward(self, g, h):
-        self.sde.graph = g
+        # self.sde.graph = g 
         h = self.dropout0(h)
-        h = self.fc_in(h).tanh()
+        h = self.fc_in(h)# .tanh()
         t = torch.tensor([0.0, 1.0], device=h.device)
         h, kl = torchsde.sdeint(
             self.sde, 
             h, 
             t,
-            bm=BrownianInterval(
-                t0=t[0],
-                t1=t[-1],
-                size=(h.shape[0], 1),
-                device=h.device,
-                cache_size=None,
-                pool_size=4,
-            ),
-            dt=0.1,
+            # bm=BrownianInterval(
+            #     t0=t[0],
+            #     t1=t[-1],
+            #     size=(h.shape, ),
+            #     device=h.device,
+            #     cache_size=None,
+            #     pool_size=4,
+            # ),
+            dt=0.05,
             logqp=True,
         )
 
