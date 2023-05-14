@@ -1,4 +1,4 @@
-for hidden_features in 64; do
+for hidden_features in 64 128 256; do
 for learning_rate in 1e-2; do
 for weight_decay in 1e-4; do
 for num_heads in 4; do

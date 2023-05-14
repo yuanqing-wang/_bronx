@@ -35,12 +35,12 @@ def run(args):
     accuracy_te = []
 
     # import tqdm
-    for idx_epoch in range(100):
+    for idx_epoch in range(50):
         model.train()
         optimizer.zero_grad()
-        y_hat, kl = model(g, g.ndata['feat'])
+        y_hat = torch.stack([model(g, g.ndata['feat'])[0] for _ in range(8)]).mean(0)
         y_hat = y_hat[g.ndata['train_mask']]
-        kl = kl.squeeze(-2)[g.ndata['train_mask']]
+        # kl = kl.squeeze(-2)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
         # kl = kl.mean()
         loss = torch.nn.CrossEntropyLoss()(y_hat, y) # + kl
@@ -50,16 +50,15 @@ def run(args):
         model.eval()
 
         with torch.no_grad():
-            y_hat, _ = model(g, g.ndata["feat"])
-            y_hat = y_hat[g.ndata["val_mask"]]
+            _y_hat = torch.stack([model(g, g.ndata["feat"])[0] for _ in range(8)], 0).mean(0)
+            y_hat = _y_hat[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
+            print(accuracy)
             accuracy_vl.append(accuracy)
-            print(accuracy, flush=True)
             scheduler.step(accuracy)
 
-            y_hat, _ = model(g, g.ndata["feat"])
-            y_hat = y_hat[g.ndata["test_mask"]]
+            y_hat = _y_hat[g.ndata["test_mask"]]
             y = g.ndata["label"][g.ndata["test_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_te.append(accuracy)

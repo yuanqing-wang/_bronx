@@ -20,7 +20,7 @@ class BronxModel(torch.nn.Module):
         # self.sde.graph = g 
         h = self.dropout0(h)
         h = self.fc_in(h)# .tanh()
-        t = torch.tensor([0.0, 1.0], device=h.device)
+        t = torch.tensor([0.0, 1.0], device=h.device, dtype=h.dtype)
         h, kl = torchsde.sdeint(
             self.sde, 
             h, 
@@ -33,7 +33,7 @@ class BronxModel(torch.nn.Module):
             #     cache_size=None,
             #     pool_size=4,
             # ),
-            dt=0.1,
+            dt=0.05,
             logqp=True,
         )
         h = h[-1]

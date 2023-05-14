@@ -47,7 +47,7 @@ class BronxLayer(torchsde.SDEStratonovich):
         self.fc_log_sigma = torch.nn.Linear(2, hidden_features)
         self.fc_mu = torch.nn.Linear(2, hidden_features)
         self.w = torch.nn.Parameter(torch.zeros(hidden_features, hidden_features))
-        torch.nn.init.xavier_uniform_(self.w, gain=0.2)
+        torch.nn.init.xavier_uniform_(self.w, gain=0.5)
 
         self.graph = None
         self.graph2 = None
