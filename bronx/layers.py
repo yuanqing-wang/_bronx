@@ -1,7 +1,7 @@
 from typing import Optional, Callable
 import torch
 import dgl
-from dgl.nn import DotGatConv, GraphConv
+from dgl.nn import DotGatConv, GraphConv, GATConv
 import torchsde
 
 # class GraphConv(torch.nn.Module):
@@ -24,23 +24,34 @@ import torchsde
 #             # x = x @ self.W.tanh()
 #             return x
 
+
+class _GraphConv(GraphConv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        in_feats, out_feats = self.weight.shape
+        del self.weight
+        self.w = torch.nn.Parameter(torch.eye(in_feats))
+        self.d = torch.nn.Parameter(torch.zeros(in_feats))
+
+    @property
+    def weight(self):
+        d = self.d.sigmoid()
+        w = torch.mm(self.w * d, self.w.T)
+        return w
+
 class BronxLayer(torchsde.SDEStratonovich):
     def __init__(self, hidden_features, num_heads=1, gamma=0.0):
         super().__init__(noise_type="diagonal")
-        # self.gcn1 = GraphConv(hidden_features, hidden_features, bias=False)
-        # self.gcn2 = GraphConv(hidden_features, hidden_features, bias=False)
-        self.gcn = GraphConv(hidden_features, hidden_features, bias=False)
-
-        self.fc_mu = torch.nn.Linear(2, hidden_features)
+        self.gcn = GraphConv(hidden_features, hidden_features // 2)
+        # self.gcn2 = _GraphConv(hidden_features, hidden_features)
         self.fc_log_sigma = torch.nn.Linear(2, hidden_features)
+        self.fc_mu = torch.nn.Linear(2, hidden_features)
         self.w = torch.nn.Parameter(torch.zeros(hidden_features, hidden_features))
-        torch.nn.init.xavier_uniform_(self.w, gain=0.1)
-        torch.nn.init.xavier_uniform_(self.fc_mu.weight, gain=0.1)
-        torch.nn.init.xavier_uniform_(self.fc_log_sigma.weight, gain=0.1)
+        torch.nn.init.xavier_uniform_(self.w, gain=0.2)
 
         self.graph = None
         self.graph2 = None
-        self.graph3 = None
+        # self.graph3 = None
         self.num_heads = num_heads
         self.gamma = gamma
 
@@ -51,16 +62,17 @@ class BronxLayer(torchsde.SDEStratonovich):
         return ty
 
     def f(self, t, y):
-        # ty = self.ty(t, y)
-        # y = torch.nn.functional.normalize(y, dim=-1)
         t = torch.broadcast_to(t, (*y.shape[:-1], 1))
         t = torch.cat([t.cos(), t.sin()], dim=-1)
+        # y = torch.nn.functional.normalize(y, dim=-1)
+        mu = self.fc_mu(t).sigmoid()
         w = self.w - self.w.T
-        # y1 = y @ w + self.gcn(self.graph, y) - self.gamma * y + self.fc_mu(t)
-        y1 = torch.nn.functional.sigmoid(self.gcn(self.graph, y))
-        y2 = torch.nn.functional.sigmoid(self.gcn(self.graph2, y))
-        y = y @ w + y1 + y2 - self.gamma * y + self.fc_mu(t)
-        return y.tanh()
+        y1 = self.gcn(self.graph, y)# .tanh()
+        y2 = self.gcn(self.graph2, y)# .tanh()
+        y12 = torch.cat([y1, y2], dim=-1)
+        y12 = torch.nn.functional.silu(y12)
+        y = y @ w + y12 - self.gamma * y
+        return torch.nn.functional.tanh(y) * mu
 
     def g(self, t, y):
         t = torch.broadcast_to(t, (*y.shape[:-1], 1))

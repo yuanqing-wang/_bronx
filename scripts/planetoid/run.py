@@ -8,7 +8,7 @@ def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
-    # g.ndata["feat"] = torch.cat([g.ndata["feat"], dgl.random_walk_pe(g, 10)], dim=-1)
+    # g.ndata["feat"] = torch.cat([g.ndata["feat"], dgl.laplacian_pe(g, 10)], dim=-1)
     # g = dgl.add_self_loop(g)
 
     model = BronxModel(
@@ -30,7 +30,7 @@ def run(args):
     # model.sde.graph3 = dgl.khop_graph(g, 3)
     # model.sde.graph4 = dgl.khop_graph(g, 4)
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", patience=10, factor=0.8)
     accuracy_vl = []
     accuracy_te = []
 
@@ -42,7 +42,7 @@ def run(args):
         y_hat = y_hat[g.ndata['train_mask']]
         kl = kl.squeeze(-2)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
-        kl = kl.mean()
+        # kl = kl.mean()
         loss = torch.nn.CrossEntropyLoss()(y_hat, y) # + kl
         loss.backward()
         optimizer.step()
@@ -56,18 +56,18 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
             print(accuracy, flush=True)
+            scheduler.step(accuracy)
 
-            # y_hat, _ = model(g, g.ndata["feat"])
-            # y_hat = y_hat[g.ndata["test_mask"]]
-            # y = g.ndata["label"][g.ndata["test_mask"]]
-            # accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-            # accuracy_te.append(accuracy)
+            y_hat, _ = model(g, g.ndata["feat"])
+            y_hat = y_hat[g.ndata["test_mask"]]
+            y = g.ndata["label"][g.ndata["test_mask"]]
+            accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
+            accuracy_te.append(accuracy)
 
     accuracy_vl = np.array(accuracy_vl)
-    # accuracy_te = np.array(accuracy_te)
+    accuracy_te = np.array(accuracy_te)
 
-    # print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
-    print(accuracy_vl.max())
+    print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
 
     import pandas as pd
     df = vars(args)
@@ -82,13 +82,13 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=256)
+    parser.add_argument("--hidden_features", type=int, default=128)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=5e-4)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--num_heads", type=float, default=4)
     parser.add_argument("--dropout0", type=float, default=0.6)
     parser.add_argument("--dropout1", type=float, default=0.6)
-    parser.add_argument("--gamma", type=float, default=0.05)
+    parser.add_argument("--gamma", type=float, default=0.3)
     args = parser.parse_args()
     print(args)
     run(args)

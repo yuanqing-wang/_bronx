@@ -28,16 +28,16 @@ class BronxModel(torch.nn.Module):
             # bm=BrownianInterval(
             #     t0=t[0],
             #     t1=t[-1],
-            #     size=(h.shape, ),
+            #     size=(h.shape[0], 1),
             #     device=h.device,
             #     cache_size=None,
             #     pool_size=4,
             # ),
-            dt=0.05,
+            dt=0.1,
             logqp=True,
         )
-
         h = h[-1]
+        # h = torch.nn.functional.silu(h)
         h = self.dropout1(h)
         h = self.fc_out(h)
         return h, kl

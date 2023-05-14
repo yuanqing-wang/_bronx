@@ -15,7 +15,7 @@ def objective(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
-    g = dgl.add_self_loop(g)
+    # g = dgl.add_self_loop(g)
 
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
@@ -30,14 +30,18 @@ def objective(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
+    model.sde.graph = g
+    model.sde.graph2 = dgl.khop_graph(g, 2)
+
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", patience=5, factor=0.8)
     accuracy = 0.0
     while True:
         model.train()
         optimizer.zero_grad()
         y_hat, kl = model(g, g.ndata['feat'])
         y_hat = y_hat[g.ndata['train_mask']]
-        kl = kl.squeeze(-2)[g.ndata['train_mask']]
+        # kl = kl.squeeze(-2)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
         loss = torch.nn.CrossEntropyLoss()(y_hat, y) # + kl.mean()
         loss.backward()
@@ -50,6 +54,7 @@ def objective(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = max(accuracy, float((y_hat.argmax(-1) == y).sum()) / len(y_hat))
             session.report({"mean_accuracy": accuracy})
+            scheduler.step(accuracy)
 
 def run():
     ray.init(num_cpus=int(os.environ["LSB_DJOB_NUMPROC"]))
