@@ -64,7 +64,7 @@ class BronxLayer(torchsde.SDEStratonovich):
     def f(self, t, y):
         t = torch.broadcast_to(t, (*y.shape[:-1], 1))
         t = torch.cat([t.cos(), t.sin()], dim=-1)
-        # y = torch.nn.functional.normalize(y, dim=-1)
+        y = torch.nn.functional.normalize(y, dim=-1)
         mu = self.fc_mu(t).sigmoid()
         w = self.w - self.w.T
         y1 = self.gcn(self.graph, y)# .tanh()

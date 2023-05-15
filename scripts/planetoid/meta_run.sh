@@ -1,6 +1,6 @@
-for hidden_features in 64 128 256; do
-for learning_rate in 1e-2; do
-for weight_decay in 1e-4; do
+for hidden_features in 256; do
+for learning_rate in 1e-2 5e-3; do
+for weight_decay in 1e-4 5e-4; do
 for num_heads in 4; do
 for dropout0 in 0.2 0.4 0.6; do
 for dropout1 in 0.2 0.4 0.6; do

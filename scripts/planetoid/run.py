@@ -71,7 +71,7 @@ def run(args):
     import pandas as pd
     df = vars(args)
     df["accuracy_vl"] = accuracy_vl.max()
-    # df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
+    df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
     df = pd.DataFrame.from_dict([df])
     import os
     header = not os.path.exists("performance.csv")
