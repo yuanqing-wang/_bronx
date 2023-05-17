@@ -21,7 +21,7 @@ class BronxModel(torch.nn.Module):
         h = self.dropout0(h)
         h = self.fc_in(h)# .tanh()
         t = torch.tensor([0.0, 1.0], device=h.device, dtype=h.dtype)
-        h, kl = torchsde.sdeint(
+        h = torchsde.sdeint(
             self.sde, 
             h, 
             t,
@@ -33,9 +33,15 @@ class BronxModel(torch.nn.Module):
             #     cache_size=None,
             #     pool_size=4,
             # ),
-            dt=0.05,
-            logqp=True,
+            dt=0.1,
+            logqp=self.training,
         )
+
+        if self.training:
+            h, kl = h
+        else:
+            kl = 0.0
+
         h = h[-1]
         # h = torch.nn.functional.silu(h)
         h = self.dropout1(h)

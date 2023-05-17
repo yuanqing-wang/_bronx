@@ -42,18 +42,20 @@ class _GraphConv(GraphConv):
 class BronxLayer(torchsde.SDEStratonovich):
     def __init__(self, hidden_features, num_heads=1, gamma=0.0):
         super().__init__(noise_type="diagonal")
-        self.gcn = GraphConv(hidden_features, hidden_features // 2)
+        # self.gcn = GraphConv(hidden_features, hidden_features // 4)
         # self.gcn2 = _GraphConv(hidden_features, hidden_features)
-        self.fc_log_sigma = torch.nn.Linear(2, hidden_features)
+        self.gcn = GraphConv(hidden_features, hidden_features // 2)
         self.fc_mu = torch.nn.Linear(2, hidden_features)
+        self.fc_log_sigma = torch.nn.Linear(2, hidden_features)
         self.w = torch.nn.Parameter(torch.zeros(hidden_features, hidden_features))
-        torch.nn.init.xavier_uniform_(self.w, gain=0.5)
-
+        torch.nn.init.xavier_uniform_(self.w, gain=0.3)
+        
         self.graph = None
         self.graph2 = None
         # self.graph3 = None
         self.num_heads = num_heads
         self.gamma = gamma
+
 
     def ty(self, t, y):
         # y = torch.nn.functional.normalize(y, dim=-1)
@@ -69,15 +71,21 @@ class BronxLayer(torchsde.SDEStratonovich):
         w = self.w - self.w.T
         y1 = self.gcn(self.graph, y)# .tanh()
         y2 = self.gcn(self.graph2, y)# .tanh()
+
+        if y1.dim() > 2:
+            y1 = y1.flatten(-2, -1)
+            y2 = y2.flatten(-2, -1)
+
         y12 = torch.cat([y1, y2], dim=-1)
-        y12 = torch.nn.functional.silu(y12)
+        # y12 = torch.nn.functional.silu(y12)
         y = y @ w + y12 - self.gamma * y
         return torch.nn.functional.tanh(y) * mu
 
     def g(self, t, y):
         t = torch.broadcast_to(t, (*y.shape[:-1], 1))
         t = torch.cat([t.cos(), t.sin()], dim=-1)
-        return torch.nn.functional.silu(self.fc_log_sigma(t))
+        return self.fc_log_sigma(t).sigmoid()# .unsqueeze(-1)
 
     def h(self, t, y):
         return -y
+        

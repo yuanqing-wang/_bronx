@@ -1,3 +1,4 @@
+#!/bin/bash
 import numpy as np
 import torch
 import dgl
@@ -29,32 +30,34 @@ def run(args):
     model.sde.graph2 = dgl.khop_graph(g, 2)
     # model.sde.graph3 = dgl.khop_graph(g, 3)
     # model.sde.graph4 = dgl.khop_graph(g, 4)
+    # model.sde.graph3 = dgl.khop_graph(g, 3)
+    # model.sde.graph4 = dgl.khop_graph(g, 4)
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", patience=10, factor=0.8)
     accuracy_vl = []
     accuracy_te = []
 
     # import tqdm
-    for idx_epoch in range(50):
+    for idx_epoch in range(1000):
         model.train()
         optimizer.zero_grad()
-        y_hat = torch.stack([model(g, g.ndata['feat'])[0] for _ in range(8)]).mean(0)
+        y_hat, kl = model(g, g.ndata['feat'])
         y_hat = y_hat[g.ndata['train_mask']]
-        # kl = kl.squeeze(-2)[g.ndata['train_mask']]
+        kl = kl.squeeze(-2)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
-        # kl = kl.mean()
-        loss = torch.nn.CrossEntropyLoss()(y_hat, y) # + kl
+        kl = kl.mean()
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y) + 1e-3 * kl
         loss.backward()
         optimizer.step()
         # scheduler.step()
         model.eval()
 
         with torch.no_grad():
-            _y_hat = torch.stack([model(g, g.ndata["feat"])[0] for _ in range(8)], 0).mean(0)
+            _y_hat = torch.stack([model(g, g.ndata["feat"])[0] for _ in range(1)], 0).mean(0)
             y_hat = _y_hat[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-            print(accuracy)
+            print(accuracy, kl.item())
             accuracy_vl.append(accuracy)
             scheduler.step(accuracy)
 
@@ -81,7 +84,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=128)
+    parser.add_argument("--hidden_features", type=int, default=256)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--num_heads", type=float, default=4)

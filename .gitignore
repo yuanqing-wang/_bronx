@@ -130,6 +130,7 @@ dmypy.json
 
 # ssh
 *.stdout
+*.out
 
 # data
 *.csv
