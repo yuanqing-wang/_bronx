@@ -40,15 +40,15 @@ class _GraphConv(GraphConv):
         return w
 
 class BronxLayer(torchsde.SDEStratonovich):
-    def __init__(self, hidden_features, num_heads=1, gamma=0.0):
-        super().__init__(noise_type="diagonal")
+    def __init__(self, hidden_features, num_heads=1, gamma=0.0, gain=0.0):
+        super().__init__(noise_type="scalar")
         # self.gcn = GraphConv(hidden_features, hidden_features // 4)
         # self.gcn2 = _GraphConv(hidden_features, hidden_features)
         self.gcn = GraphConv(hidden_features, hidden_features // 2)
         self.fc_mu = torch.nn.Linear(2, hidden_features)
         self.fc_log_sigma = torch.nn.Linear(2, hidden_features)
         self.w = torch.nn.Parameter(torch.zeros(hidden_features, hidden_features))
-        torch.nn.init.xavier_uniform_(self.w, gain=0.3)
+        torch.nn.init.xavier_uniform_(self.w, gain=gain)
         
         self.graph = None
         self.graph2 = None
@@ -84,7 +84,7 @@ class BronxLayer(torchsde.SDEStratonovich):
     def g(self, t, y):
         t = torch.broadcast_to(t, (*y.shape[:-1], 1))
         t = torch.cat([t.cos(), t.sin()], dim=-1)
-        return self.fc_log_sigma(t).sigmoid()# .unsqueeze(-1)
+        return self.fc_log_sigma(t).unsqueeze(-1)
 
     def h(self, t, y):
         return -y

@@ -20,6 +20,7 @@ def run(args):
         dropout0=args.dropout0,
         dropout1=args.dropout1,
         gamma=args.gamma,
+        gain=args.gain,
     )
 
     if torch.cuda.is_available():
@@ -33,12 +34,12 @@ def run(args):
     # model.sde.graph3 = dgl.khop_graph(g, 3)
     # model.sde.graph4 = dgl.khop_graph(g, 4)
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", patience=10, factor=0.8)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", patience=args.patience, factor=args.factor)
     accuracy_vl = []
     accuracy_te = []
 
     # import tqdm
-    for idx_epoch in range(1000):
+    for idx_epoch in range(100):
         model.train()
         optimizer.zero_grad()
         y_hat, kl = model(g, g.ndata['feat'])
@@ -46,18 +47,18 @@ def run(args):
         kl = kl.squeeze(-2)[g.ndata['train_mask']]
         y = g.ndata['label'][g.ndata['train_mask']]
         kl = kl.mean()
-        loss = torch.nn.CrossEntropyLoss()(y_hat, y) + 1e-3 * kl
+        loss = torch.nn.CrossEntropyLoss()(y_hat, y) + kl
         loss.backward()
         optimizer.step()
         # scheduler.step()
         model.eval()
 
         with torch.no_grad():
-            _y_hat = torch.stack([model(g, g.ndata["feat"])[0] for _ in range(1)], 0).mean(0)
+            _y_hat = torch.stack([model(g, g.ndata["feat"])[0] for _ in range(4)], 0).mean(0)
             y_hat = _y_hat[g.ndata["val_mask"]]
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y).sum()) / len(y_hat)
-            print(accuracy, kl.item())
+            print(accuracy, kl.item(), flush=True)
             accuracy_vl.append(accuracy)
             scheduler.step(accuracy)
 
@@ -90,7 +91,10 @@ if __name__ == "__main__":
     parser.add_argument("--num_heads", type=float, default=4)
     parser.add_argument("--dropout0", type=float, default=0.6)
     parser.add_argument("--dropout1", type=float, default=0.6)
-    parser.add_argument("--gamma", type=float, default=0.3)
+    parser.add_argument("--gamma", type=float, default=0.2)
+    parser.add_argument("--patience", type=int, default=15)
+    parser.add_argument("--factor", type=float, default=0.4)
+    parser.add_argument("--gain", type=float, default=0.1)
     args = parser.parse_args()
     print(args)
     run(args)

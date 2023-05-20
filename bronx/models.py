@@ -7,12 +7,12 @@ class BronxModel(torch.nn.Module):
     def __init__(
             self, 
             in_features, hidden_features, out_features, num_heads=1, 
-            dropout0=0.0, dropout1=0.0, gamma=0.0,
+            dropout0=0.0, dropout1=0.0, gamma=0.0, gain=0.0,
         ):
         super().__init__()
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
-        self.sde = BronxLayer(hidden_features, gamma=gamma)
+        self.sde = BronxLayer(hidden_features, gamma=gamma, gain=gain)
         self.dropout0 = torch.nn.Dropout(dropout0)
         self.dropout1 = torch.nn.Dropout(dropout1)
 
@@ -33,7 +33,7 @@ class BronxModel(torch.nn.Module):
             #     cache_size=None,
             #     pool_size=4,
             # ),
-            dt=0.1,
+            dt=0.05,
             logqp=self.training,
         )
 

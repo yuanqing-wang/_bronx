@@ -1,10 +1,12 @@
 for hidden_features in 256; do
-for learning_rate in 1e-2 5e-3; do
-for weight_decay in 1e-4 5e-4; do
+for learning_rate in 1e-2; do
+for weight_decay in 1e-4; do
 for num_heads in 4; do
 for dropout0 in 0.2 0.4 0.6; do
 for dropout1 in 0.2 0.4 0.6; do
 for gamma in 0.2 0.4 0.6 0.8; do
+for patience in 5 10 15; do
+for factor in 0.4 0.6 0.8; do
 
 bsub \
     -q gpuqueue \
@@ -20,8 +22,12 @@ bsub \
     --num_heads $num_heads \
     --dropout0 $dropout0 \
     --dropout1 $dropout1 \
-    --gamma $gamma
+    --gamma $gamma \
+    --patience $patience \
+    --factor $factor
 
+done
+done
 done
 done
 done

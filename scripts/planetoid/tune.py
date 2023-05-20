@@ -24,6 +24,7 @@ def objective(args):
         dropout0=args.dropout0,
         dropout1=args.dropout1,
         gamma=args.gamma,
+        gain=args.gain,
     )
 
     if torch.cuda.is_available():
