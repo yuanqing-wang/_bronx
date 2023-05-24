@@ -8,89 +8,63 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
+def linear_diffusion(g, h, e=None, gamma=0.1):
+    a = g.adj()
+    if e is not None:
+        a.val.mul_(e)
+    a = a.to_dense()
+    a.fill_diagonal_(gamma)
+    a = a / a.sum(-1, keepdims=True)
+    a = torch.linalg.matrix_exp(a)
+    return a @ h
+
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
-            self, in_features, out_features, 
-            embedding_features=None, num_heads=1, index=0,
+            self, 
+            in_features, out_features, activation=torch.nn.SiLU(), 
+            dropout=0.0,
+            idx=0,
         ):
         super().__init__()
-        if embedding_features is None: embedding_features = out_features
-        self.in_features = in_features
+        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.activation = activation
+        self.idx = idx
         self.out_features = out_features
-        self.embedding_features = int(out_features / num_heads)
-        self.index = index
+        self.dropout = torch.nn.Dropout(dropout)
 
-        self.fc = pyro.nn.PyroModule[torch.nn.Linear](
-            in_features, out_features, bias=False,
-        )
+    def guide(self, g, h):
+        k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
+        g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"] = k, mu, log_sigma
+        g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
+        g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
+        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
+            e = pyro.sample(
+                    f"e{self.idx}", 
+                    pyro.distributions.Normal(
+                    g.edata["mu"], g.edata["log_sigma"].exp(),
+               ).to_event(1)
+            )
+        return e
 
-        self.fc_k = pyro.nn.PyroModule[torch.nn.Linear](
-            embedding_features, embedding_features, bias=False,
-        )
-
-        self.fc_q_mu = pyro.nn.PyroModule[torch.nn.Linear](
-            embedding_features, embedding_features, bias=False,
-        )
-
-        self.fc_q_log_sigma = pyro.nn.PyroModule[torch.nn.Linear](
-            embedding_features, embedding_features, bias=False,
-        )
-
-        self.num_heads = num_heads
-
-    def mp(self, g, h, e=None):
-        g = g.local_var()
-        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
-        if e is None:
-            e = h.new_zeros(g.number_of_edges(), self.num_heads, 1)
-        h = self.fc(h)
-        g.ndata["h"] = h
-        g.edata["e"] = edge_softmax(g, e / self.embedding_features ** 0.5)
-        g.update_all(
-            fn.u_mul_e("h", "e", "a"),
-            fn.sum("a", "h"),
-        )
-        g.update_all(
-            fn.copy_e("e", "m"),
-            fn.sum("m", "e_sum")
-        )
-        h = g.ndata["h"] / (g.ndata["e_sum"].relu() + 1e-8)
-        h = h.flatten(-2, -1)
+    def mp(self, g, h, e):
+        e = e / (self.out_features ** 0.5)
+        e = edge_softmax(g, e).squeeze(-1)
+        h = linear_diffusion(g, h, e=e)
         return h
 
-    def model(self, g, h):
-        g = g.local_var()
-
-        with pyro.plate(f"_e{self.index}", g.number_of_edges()):
+    def forward(self, g, h):
+        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             e = pyro.sample(
-                f"e{self.index}",
-                pyro.distributions.Normal(
-                    h.new_zeros(size=(g.number_of_edges(), self.num_heads, self.out_features),),
-                    h.new_ones(size=(g.number_of_edges(), self.num_heads, self.out_features),),
-                ).to_event(2)
+                    f"e{self.idx}", 
+                    pyro.distributions.Normal(
+                        torch.zeros(g.number_of_edges(), 1, device=g.device),
+                        torch.ones(g.number_of_edges(), 1, device=g.device),
+               ).to_event(1)
             )
 
         h = self.mp(g, h, e)
+        h = self.dropout(h)
         return h
 
-    def guide(self, g, h):
-        g = g.local_var()
-        h = self.fc(h)
-        h = h.reshape(*h.shape[:-1], self.num_heads, -1)
-        k = self.fc_k(h)# .tanh()
-        mu, log_sigma = self.fc_q_mu(h).tanh(), self.fc_q_log_sigma(h).tanh()
-        g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
-        g.apply_edges(fn.u_dot_v("mu", "mu", "mu"))
-        g.apply_edges(
-            fn.u_dot_v("log_sigma", "log_sigma", "log_sigma"),
-        )
-
-        with pyro.plate(f"_e{self.index}", g.number_of_edges()):
-            e = pyro.sample(
-                f"e{self.index}",
-                pyro.distributions.Normal(
-                    g.edata["mu"].expand(g.number_of_edges(), self.num_heads, self.out_features), 
-                    torch.nn.functional.softplus(g.edata["log_sigma"].expand(g.number_of_edges(), self.num_heads, self.out_features)),
-                ).to_event(2)
-            ).relu()
-        return e

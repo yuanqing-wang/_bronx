@@ -4,26 +4,20 @@ import pyro
 from pyro import poutine
 import dgl
 dgl.use_libxsmm(False)
-from bronx.models import BronxModel, BaselineModel
-from bronx.layers import BronxLayer
-from bronx.utils import personalized_page_rank
+from bronx.models import LinearDiffusionModel, BronxModel
 
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
-    g = dgl.add_self_loop(g)
-    # g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
+    # g = dgl.add_self_loop(g)
+    g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
-    model = BaselineModel(
+    model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
-        depth=args.depth,
-        num_heads=args.num_heads,
-        # scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes()),
-        # scale=args.scale,
-        # bayesian_weights=False,
+        gamma=args.gamma,
     )
 
     if torch.cuda.is_available():
@@ -31,32 +25,34 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = torch.optim.Adam(args.learning_rate, args.weight_decay)
+    optimizer = torch.optim.Adam(
+        model.parameters(), args.learning_rate, weight_decay=args.weight_decay,
+    )
+
     accuracy_vl = []
     accuracy_te = []
 
-    import tqdm
-    for idx in range(1000):
-        y_hat = model(g, g.ndata["feat"])
-        loss = torch.nn.CrossEntropyLoss()(input=y_hat[g.ndata["train_mask"]], target=g.ndata["label"][g.ndata["train_mask"]])
+    for idx in range(100):
+        model.train()
         optimizer.zero_grad()
+        y_hat = model(g, g.ndata["feat"])
+        model.eval()
+        y_hat_tr = y_hat[g.ndata["train_mask"]]
+        y_hat_vl = y_hat[g.ndata["val_mask"]]
+        y_hat_te = y_hat[g.ndata["test_mask"]]
+        y_tr = g.ndata["label"][g.ndata["train_mask"]]
+        y_vl = g.ndata["label"][g.ndata["val_mask"]]
+        y_te = g.ndata["label"][g.ndata["test_mask"]]
+        loss = torch.nn.CrossEntropyLoss()(y_hat_tr, y_tr.float())
         loss.backward()
         optimizer.step()
 
-        if idx % 10 != 0:
-            continue
+        accuracy = float((y_hat_vl.argmax(-1) == y_vl.argmax(-1)).sum()) / len(y_hat_vl)
+        accuracy_vl.append(accuracy)
+        print(accuracy)
 
-        with torch.no_grad():
-            
-            y_hat = y_hat[g.ndata["val_mask"]]
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_vl.append(accuracy)
-
-            y_hat = y_hat[g.ndata["test_mask"]]
-            y = g.ndata["label"][g.ndata["test_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_te.append(accuracy)
+        accuracy = float((y_hat_te.argmax(-1) == y_te.argmax(-1)).sum()) / len(y_hat_te)
+        accuracy_te.append(accuracy)
 
     accuracy_vl = np.array(accuracy_vl)
     accuracy_te = np.array(accuracy_te)
@@ -76,14 +72,10 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=4)
+    parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--depth", type=int, default=2)
-    parser.add_argument("--residual", type=int, default=1)
-    parser.add_argument("--weight_decay", type=float, default=1e-10)
-    parser.add_argument("--n_samples", type=int, default=4)
-    parser.add_argument("--num_heads", type=int, default=1)
-    parser.add_argument("--scale", type=float, default=1.0)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
+    parser.add_argument("--gamma", type=float, default=0.0)
     args = parser.parse_args()
     print(args)
     run(args)
