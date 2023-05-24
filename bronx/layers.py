@@ -19,6 +19,7 @@ def linear_diffusion(g, h, e=None, gamma=0.1):
     ] = gamma
     a = a / a.sum(-1, keepdims=True)
     a = torch.linalg.matrix_exp(a)
+    a = a / a.sum(-1, keepdims=True)
     h = a @ h
     h = h.mean(0)
     return h
@@ -33,7 +34,6 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_out = torch.nn.Linear(in_features * num_heads, in_features)
         self.activation = activation
         self.idx = idx
         self.out_features = out_features
