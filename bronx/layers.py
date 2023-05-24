@@ -16,6 +16,7 @@ def linear_diffusion(g, h, e=None, gamma=0.1):
     a.fill_diagonal_(gamma)
     a = a / a.sum(-1, keepdims=True)
     a = torch.linalg.matrix_exp(a)
+    a = a / a.sum(-1, keepdims=True)
     return a @ h
 
 class BronxLayer(pyro.nn.PyroModule):
