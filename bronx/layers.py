@@ -8,27 +8,33 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-def linear_diffusion(g, h, e=None, gamma=0.1):
-    a = g.adj().to_dense().unsqueeze(-1).repeat(1, 1, e.shape[-1])
-    a[g.edges()] = e
-    a = a.swapaxes(-1, 0)
-    a[
-        torch.eye(
-            a.shape[-1], device=a.device
-        ).bool().unsqueeze(0).repeat(e.shape[-1], 1, 1)
-    ] = gamma
-    a = a / a.sum(-1, keepdims=True)
-    a = torch.linalg.matrix_exp(a)
-    a = a / a.sum(-1, keepdims=True)
-    h = a @ h
-    h = h.mean(0)
-    return h
+class LinearDiffusion(torch.nn.Module):
+    def __init__(self, gamma=0.0, dropout=0.0):
+        super().__init__()
+        self.gamma = gamma
+        self.dropout = torch.nn.Dropout(dropout)
+
+    def forward(self, g, h, e=None):
+        a = g.adj().to_dense().unsqueeze(-1).repeat(1, 1, e.shape[-1])
+        a[g.edges()] = e
+        a = a.swapaxes(-1, 0)
+        a[
+            torch.eye(
+                a.shape[-1], device=a.device
+            ).bool().unsqueeze(0).repeat(e.shape[-1], 1, 1)
+        ] = self.gamma
+        a = a / a.sum(-1, keepdims=True)
+        a = torch.linalg.matrix_exp(a)
+        a = self.dropout(a)
+        h = a @ h
+        h = h.mean(0)
+        return h
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
             in_features, out_features, activation=torch.nn.SiLU(), 
-            dropout=0.0, idx=0, num_heads=4,
+            dropout=0.0, idx=0, num_heads=4, gamma=0.0, edge_drop=0.0,
         ):
         super().__init__()
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
@@ -39,6 +45,9 @@ class BronxLayer(pyro.nn.PyroModule):
         self.out_features = out_features
         self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
+        self.linear_diffusion = LinearDiffusion(
+            dropout=edge_drop, gamma=gamma,
+        )
 
     def guide(self, g, h):
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
@@ -63,7 +72,7 @@ class BronxLayer(pyro.nn.PyroModule):
     def mp(self, g, h, e):
         e = e / (self.out_features ** 0.5)
         e = edge_softmax(g, e).squeeze(-1)
-        h = linear_diffusion(g, h, e=e)
+        h = self.linear_diffusion(g, h, e=e)
         return h
 
     def forward(self, g, h):
