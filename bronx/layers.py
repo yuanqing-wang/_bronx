@@ -37,9 +37,9 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=0.0, idx=0, num_heads=4, gamma=0.0, edge_drop=0.0,
         ):
         super().__init__()
-        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_k = pyro.nn.PyroModule[torch.nn.Linear](in_features, out_features, bias=False)
+        self.fc_mu = pyro.nn.PyroModule[torch.nn.Linear](in_features, out_features, bias=False)
+        self.fc_log_sigma = pyro.nn.PyroModule[torch.nn.Linear](in_features, out_features, bias=False)
         self.activation = activation
         self.idx = idx
         self.out_features = out_features
@@ -51,6 +51,8 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def guide(self, g, h):
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
+        k, mu, log_sigma = k - k.mean(-1, keepdims=True), mu - mu.mean(-1, keepdims=True), log_sigma - log_sigma.mean(-1, keepdims=True)
+        k, mu, log_sigma = torch.nn.functional.normalize(k), torch.nn.functional.normalize(mu), torch.nn.functional.normalize(log_sigma)
         k = k.reshape(k.shape[0], self.num_heads, -1)
         mu = mu.reshape(mu.shape[0], self.num_heads, -1)
         log_sigma = log_sigma.reshape(log_sigma.shape[0], self.num_heads, -1)
@@ -64,10 +66,11 @@ class BronxLayer(pyro.nn.PyroModule):
                         f"e{self.idx}", 
                         pyro.distributions.Normal(
                         g.edata["mu"], g.edata["log_sigma"].exp(),
+                        validate_args=False,
                     ).to_event(1)
                 )
 
-        return e
+        return {f"e{self.idx}": e}
 
     def mp(self, g, h, e):
         e = e / (self.out_features ** 0.5)

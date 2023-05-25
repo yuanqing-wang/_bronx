@@ -31,8 +31,20 @@ def run(args):
         g = g.to("cuda:0")
 
 
+    def is_weight(x):
+
+        result = "weight" in x["name"]
+        print(x["name"], result)
+        return result
+
+    # is_weight = lambda x: "weight" in x["name"]
+    guide = pyro.infer.autoguide.AutoGuideList(model)   
+    # guide.add(poutine.block(pyro.infer.autoguide.AutoNormal(model), expose_fn=is_weight))
+    guide.add(poutine.block(pyro.infer.autoguide.guides.AutoCallable(model, model.guide), hide_fn=is_weight))
+
+
     optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    svi = pyro.infer.SVI(model, model.guide, optimizer, loss=pyro.infer.Trace_ELBO(num_particles=1))
+    svi = pyro.infer.SVI(model, guide, optimizer, loss=pyro.infer.Trace_ELBO(num_particles=1))
 
     accuracy_vl = []
     accuracy_te = []
@@ -40,24 +52,34 @@ def run(args):
     for idx in range(50):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
+        print(loss)
         model.eval()
 
-        with torch.no_grad():
-            predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=1, 
-                return_sites=["_RETURN"],
-            )
-            
-            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])["_RETURN"].mean(0)
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_vl.append(accuracy)
-            print(accuracy, loss)
+        # with torch.no_grad():
+        #     y_hat = torch.stack([
+        #         poutine.replay(
+        #             model, 
+        #             poutine.trace(guide).get_trace(g, g.ndata["feat"], mask=g.ndata["val_mask"]),
+        #         )(g, g.ndata["feat"], mask=g.ndata["val_mask"])
+        #         for _ in range(args.num_samples)
+        #     ]).mean(0)
 
-            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
-            y = g.ndata["label"][g.ndata["test_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_te.append(accuracy)
+        #     y = g.ndata["label"][g.ndata["val_mask"]]
+        #     accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
+        #     accuracy_vl.append(accuracy)
+        #     print(accuracy, flush=True)
+
+        #     y_hat = torch.stack([
+        #         poutine.replay(
+        #             model, 
+        #             poutine.trace(guide).get_trace(g, g.ndata["feat"], mask=g.ndata["test_mask"]),
+        #         )(g, g.ndata["feat"], mask=g.ndata["test_mask"])
+        #         for _ in range(args.num_samples)
+        #     ]).mean(0)
+
+        #     y = g.ndata["label"][g.ndata["test_mask"]]
+        #     accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
+        #     accuracy_te.append(accuracy)
 
     accuracy_vl = np.array(accuracy_vl)
     accuracy_te = np.array(accuracy_te)
@@ -86,6 +108,7 @@ if __name__ == "__main__":
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--num_samples", type=int, default=1)
     args = parser.parse_args()
     print(args)
     run(args)
