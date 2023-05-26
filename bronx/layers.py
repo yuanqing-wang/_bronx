@@ -8,6 +8,29 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
+class BayesianLinear(torch.nn.Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.W_mu = torch.nn.Parameter(torch.randn(in_features, out_features))
+        self.W_log_sigma = torch.nn.Parameter(torch.randn(in_features, out_features))
+        if bias:
+            self.B = torch.nn.Parameter(torch.randn(out_features))
+        else:
+            self.B = 0.0
+
+    def forward(self, x):
+        W = pyro.sample(
+            "W",
+            pyro.distributions.Normal(
+                self.W_mu, self.W_log_sigma.exp(),
+            ).to_event(2),
+        )
+        return x @ W + self.B
+
+    def guide(self, x):
+        pass
+
+
 class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
         super().__init__()
