@@ -46,7 +46,6 @@ class BronxLayer(pyro.nn.PyroModule):
             torch.randn(in_features, out_features),
         )
 
-        
 
 
 
