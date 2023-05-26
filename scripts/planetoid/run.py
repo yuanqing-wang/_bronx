@@ -31,8 +31,18 @@ def run(args):
         g = g.to("cuda:0")
 
 
-    optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    svi = pyro.infer.SVI(model, model.guide, optimizer, loss=pyro.infer.Trace_ELBO(num_particles=1))
+    optimizer = torch.optim.Adam # ({"lr": args.learning_rate, "weight_decay": args.weight_decay})
+    scheduler = pyro.optim.ReduceLROnPlateau(
+        {
+            "optimizer": optimizer,
+            "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+            "patience": 15,
+            "factor": 0.4,
+            "mode": "max",
+        }
+    )
+
+    svi = pyro.infer.SVI(model, model.guide, scheduler, loss=pyro.infer.Trace_ELBO(num_particles=1))
 
     accuracy_vl = []
     accuracy_te = []
@@ -52,6 +62,7 @@ def run(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
+            scheduler.step(accuracy)
             print(accuracy, loss)
 
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
