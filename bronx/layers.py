@@ -39,17 +39,8 @@ class BronxLayer(pyro.nn.PyroModule):
         ):
         super().__init__()
 
-        self.w_k_mu = pyro.nn.PyroParam(
-            torch.randn(in_features, out_features),
-        )
-        self.w_k_log_sigma = pyro.nn.PyroParam(
-            torch.randn(in_features, out_features),
-        )
-
-
-
-
-
+        self.in_features = in_features
+        self.out_features = out_features
         self.activation = activation
         self.idx = idx
         self.out_features = out_features
@@ -59,10 +50,63 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=edge_drop, gamma=gamma,
         )
 
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+
+    @pyro.nn.PyroParam
+    def w_k_mu(self):
+        return torch.randn(self.in_features, self.out_features, device=self.device)
+
+    @pyro.nn.PyroParam
+    def w_k_log_sigma(self):
+        return torch.randn(self.in_features, self.out_features, device=self.device)
+
+    @pyro.nn.PyroParam
+    def w_mu_mu(self):
+        return torch.randn(self.in_features, self.out_features, device=self.device)
+
+    @pyro.nn.PyroParam
+    def w_mu_log_sigma(self):
+        return torch.randn(self.in_features, self.out_features, device=self.device)
+
+    @pyro.nn.PyroParam
+    def w_log_sigma_mu(self):
+        return torch.randn(self.in_features, self.out_features, device=self.device)
+
+    @pyro.nn.PyroParam
+    def w_log_sigma_log_sigma(self):
+        return torch.randn(self.in_features, self.out_features, device=self.device)
+
     def guide(self, g, h):
-        h = h - h.mean(-1, keepdims=True)
-        h = torch.nn.functional.normalize(h, dim=-1)
-        k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
+        # h = h - h.mean(-1, keepdims=True)
+        # h = torch.nn.functional.normalize(h, dim=-1)
+        # k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
+
+        w_k = pyro.sample(
+            "w_k%s" % self.idx, 
+            pyro.distributions.Normal(
+                self.w_k_mu, self.w_k_log_sigma.exp()
+            ).to_event(2)
+        )
+
+        w_mu = pyro.sample(
+            "w_mu%s" % self.idx,
+            pyro.distributions.Normal(
+                self.w_mu_mu, self.w_mu_log_sigma.exp()
+            ).to_event(2)
+        )
+
+        w_log_sigma = pyro.sample(
+            "w_log_sigma%s" % self.idx,
+            pyro.distributions.Normal(
+                self.w_log_sigma_mu, self.w_log_sigma_log_sigma.exp()
+            ).to_event(2)
+        )
+
+        k, mu, log_sigma = h @ w_k, h @ w_mu, h @ w_log_sigma
+
         k = k.reshape(k.shape[0], self.num_heads, -1)
         mu = mu.reshape(mu.shape[0], self.num_heads, -1)
         log_sigma = log_sigma.reshape(log_sigma.shape[0], self.num_heads, -1)
@@ -88,6 +132,17 @@ class BronxLayer(pyro.nn.PyroModule):
         return h
 
     def forward(self, g, h):
+        for param in ["w_k", "w_mu", "w_log_sigma"]:
+            pyro.sample(
+                param + str(self.idx),
+                pyro.distributions.Normal(
+                    torch.zeros(self.in_features, self.out_features, device=self.device),
+                    torch.ones(self.in_features, self.out_features, device=self.device),
+                ).to_event(2),
+            )
+
+
+
         with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
             with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
                 e = pyro.sample(
