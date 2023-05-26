@@ -50,6 +50,8 @@ class BronxLayer(pyro.nn.PyroModule):
         )
 
     def guide(self, g, h):
+        h = h - h.mean(-1, keepdims=True)
+        h = torch.nn.functional.normalize(h, dim=-1)
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
         k = k.reshape(k.shape[0], self.num_heads, -1)
         mu = mu.reshape(mu.shape[0], self.num_heads, -1)
@@ -70,7 +72,7 @@ class BronxLayer(pyro.nn.PyroModule):
         return e
 
     def mp(self, g, h, e):
-        e = e / (self.out_features ** 0.5)
+        e = e / ((self.out_features // self.num_heads) ** 0.5)
         e = edge_softmax(g, e).squeeze(-1)
         h = self.linear_diffusion(g, h, e=e)
         return h

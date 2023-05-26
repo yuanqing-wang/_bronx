@@ -85,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
-    parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--num_heads", type=int, default=4)
     args = parser.parse_args()
     print(args)
     run(args)
