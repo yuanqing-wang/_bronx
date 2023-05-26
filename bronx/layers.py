@@ -70,7 +70,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(1)
                 )
 
-        return {f"e{self.idx}": e}
+        return e
 
     def mp(self, g, h, e):
         e = e / (self.out_features ** 0.5)

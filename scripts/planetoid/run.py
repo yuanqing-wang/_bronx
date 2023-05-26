@@ -40,7 +40,8 @@ def run(args):
     # is_weight = lambda x: "weight" in x["name"]
     guide = pyro.infer.autoguide.AutoGuideList(model)   
     # guide.add(poutine.block(pyro.infer.autoguide.AutoNormal(model), expose_fn=is_weight))
-    guide.add(poutine.block(pyro.infer.autoguide.guides.AutoCallable(model, model.guide), hide_fn=is_weight))
+    # guide.add(poutine.block(pyro.infer.autoguide.guides.AutoCallable(model, model.guide), hide_fn=is_weight))
+    guide.add(model.guide)
 
 
     optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
