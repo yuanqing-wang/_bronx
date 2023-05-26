@@ -8,28 +8,6 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-class BayesianLinear(torch.nn.Module):
-    def __init__(self, in_features, out_features, bias=True):
-        super().__init__()
-        self.W_mu = torch.nn.Parameter(torch.randn(in_features, out_features))
-        self.W_log_sigma = torch.nn.Parameter(torch.randn(in_features, out_features))
-        if bias:
-            self.B = torch.nn.Parameter(torch.randn(out_features))
-        else:
-            self.B = 0.0
-
-    def forward(self, x):
-        W = pyro.sample(
-            "W",
-            pyro.distributions.Normal(
-                self.W_mu, self.W_log_sigma.exp(),
-            ).to_event(2),
-        )
-        return x @ W + self.B
-
-    def guide(self, x):
-        pass
-
 
 class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
@@ -60,9 +38,19 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=0.0, idx=0, num_heads=4, gamma=0.0, edge_drop=0.0,
         ):
         super().__init__()
-        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+
+        self.w_k_mu = pyro.nn.PyroParam(
+            torch.randn(in_features, out_features),
+        )
+        self.w_k_log_sigma = pyro.nn.PyroParam(
+            torch.randn(in_features, out_features),
+        )
+
+        
+
+
+
+
         self.activation = activation
         self.idx = idx
         self.out_features = out_features
