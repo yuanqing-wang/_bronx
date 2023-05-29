@@ -1,12 +1,14 @@
 for hidden_features in 64; do
-for depth in 3 4 5; do
+for depth in 3; do
 for learning_rate in 1e-2; do
 for weight_decay in 1e-5; do
 for gamma in 0.7; do
 for dropout in 0.5; do
 for edge_drop in 0.2; do
 for embedding_features in 16; do
-for num_heads in 1 2 4 8; do
+for num_heads in 4; do
+for patience in 10; do
+for factor in 0.75; do
 
 sbatch \
 	--nodes=1 \
@@ -27,8 +29,12 @@ sbatch \
     --edge_drop $edge_drop \
     --embedding_features $embedding_features \
     --num_heads $num_heads \
+    --factor $factor \
+    --patience $patience\
 "
 
+done
+done
 done
 done
 done

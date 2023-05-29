@@ -36,8 +36,8 @@ def run(args):
         {
             "optimizer": optimizer,
             "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "patience": 15,
-            "factor": 0.4,
+            "patience": args.patience,
+            "factor": args.factor,
             "mode": "max",
         }
     )
@@ -54,7 +54,7 @@ def run(args):
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=1, 
+                model, guide=model.guide, num_samples=4, 
                 return_sites=["_RETURN"],
             )
             
@@ -97,6 +97,8 @@ if __name__ == "__main__":
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--num_heads", type=int, default=4)
+    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--factor", type=float, default=0.5)
     args = parser.parse_args()
     print(args)
     run(args)
