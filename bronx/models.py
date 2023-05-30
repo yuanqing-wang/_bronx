@@ -2,7 +2,7 @@ from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import linear_diffusion, BronxLayer
+from .layers import LinearDiffusion, BronxLayer
 
 import functools
 
@@ -32,7 +32,7 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features=None,
             activation=torch.nn.SiLU(), gamma=0.0,
             depth=2,
-            dropout=0.0,
+            dropout=0.0, edge_drop=0.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -53,6 +53,8 @@ class BronxModel(pyro.nn.PyroModule):
                     activation=activation, 
                     idx=idx,
                     dropout=dropout,
+                    edge_drop=edge_drop,
+                    gamma=gamma,
                 )
             )
 

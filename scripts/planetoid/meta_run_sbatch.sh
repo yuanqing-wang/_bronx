@@ -1,9 +1,9 @@
-for hidden_features in 64 128 256; do
+for hidden_features in 64; do
 for depth in 2 3 4 5; do
-for learning_rate in 1e-2 5e-3; do
-for weight_decay in 1e-4 5e-4; do
-for gamma in 0.0 0.2 0.4; do
-for dropout in 0.0 0.5; do
+for learning_rate in 1e-2; do
+for weight_decay in 1e-4; do
+for gamma in 0.7; do
+for dropout in 0.5; do
 
 sbatch \
 	--nodes=1 \

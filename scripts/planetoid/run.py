@@ -21,6 +21,7 @@ def run(args):
         gamma=args.gamma,
         dropout=args.dropout,
         depth=args.depth,
+        edge_drop=args.edge_drop,
     )
 
     if torch.cuda.is_available():
@@ -82,6 +83,7 @@ if __name__ == "__main__":
     parser.add_argument("--gamma", type=float, default=0.4)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.5)
+    parser.add_argument("--edge_drop", type=float, default=0.2)
     args = parser.parse_args()
     print(args)
     run(args)
