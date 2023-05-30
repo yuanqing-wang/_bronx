@@ -12,7 +12,7 @@ class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
         super().__init__()
         self.gamma = gamma
-        self.dropout = dropout
+        self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, g, h, e=None):
         a = g.adj().to_dense().unsqueeze(-1).repeat(1, 1, e.shape[-1])
@@ -25,7 +25,7 @@ class LinearDiffusion(torch.nn.Module):
         ] = self.gamma
         a = a / a.sum(-1, keepdims=True)
         a = torch.linalg.matrix_exp(a)
-        a = pyro.distributions.Bernoulli(1-self.dropout).sample(a.shape).to(a.device) * a
+        a = self.dropout(a)
         h = a @ h
         h = h.mean(0)
         return h
@@ -64,7 +64,7 @@ class BronxLayer(pyro.nn.PyroModule):
             with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
                 e = pyro.sample(
                         f"e{self.idx}", 
-                        pyro.distributions.Normal(
+                        pyro.distributions.LogNormal(
                         g.edata["mu"], g.edata["log_sigma"].exp(),
                     ).to_event(1)
                 )
@@ -72,8 +72,9 @@ class BronxLayer(pyro.nn.PyroModule):
         return e
 
     def mp(self, g, h, e):
-        e = e / ((self.out_features // self.num_heads) ** 0.5)
-        e = edge_softmax(g, e).squeeze(-1)
+        # e = e / ((self.out_features // self.num_heads) ** 0.5)
+        # e = edge_softmax(g, e).squeeze(-1)
+        e = e.squeeze(-1)
         h = self.linear_diffusion(g, h, e=e)
         return h
 
@@ -82,7 +83,7 @@ class BronxLayer(pyro.nn.PyroModule):
             with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
                 e = pyro.sample(
                         f"e{self.idx}", 
-                        pyro.distributions.Normal(
+                        pyro.distributions.LogNormal(
                             torch.zeros(g.number_of_edges(), self.num_heads, 1, device=g.device),
                             torch.ones(g.number_of_edges(), self.num_heads, 1, device=g.device),
                     ).to_event(1)

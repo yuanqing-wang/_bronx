@@ -1,0 +1,5 @@
+,data,hidden_features,embedding_features,learning_rate,weight_decay,gamma,depth,dropout,edge_drop,num_heads,patience,factor,accuracy_vl,accuracy_te
+0,cora,64,16,0.01,1e-05,0.7,3,0.5,0.8,4,10,0.75,0.418,0.448
+0,cora,64,16,0.01,1e-05,0.7,3,0.5,0.2,4,10,0.75,0.81,0.802
+0,cora,64,16,0.01,1e-05,0.7,3,0.5,0.6,4,10,0.75,0.696,0.703
+0,cora,64,16,0.01,1e-05,0.7,3,0.5,0.4,4,10,0.75,0.806,0.805

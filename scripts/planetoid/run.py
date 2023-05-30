@@ -47,14 +47,14 @@ def run(args):
     accuracy_vl = []
     accuracy_te = []
 
-    for idx in range(50):
+    for idx in range(30):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
         model.eval()
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=4, 
+                model, guide=model.guide, num_samples=2, 
                 return_sites=["_RETURN"],
             )
             
