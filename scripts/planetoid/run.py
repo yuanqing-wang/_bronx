@@ -54,7 +54,7 @@ def run(args):
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=2, 
+                model, guide=model.guide, num_samples=1, 
                 return_sites=["_RETURN"],
             )
             
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--gamma", type=float, default=0.7)
-    parser.add_argument("--depth", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--num_heads", type=int, default=4)
