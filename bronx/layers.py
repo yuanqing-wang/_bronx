@@ -42,6 +42,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_covar = torch.nn.Linear(in_features, out_features, bias=False)
         self.activation = activation
         self.idx = idx
         self.out_features = out_features
@@ -54,22 +55,23 @@ class BronxLayer(pyro.nn.PyroModule):
     def guide(self, g, h):
         # h = h - h.mean(-1, keepdims=True)
         # h = torch.nn.functional.normalize(h, dim=-1)
-        k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
-        k = k.reshape(k.shape[0], self.num_heads, -1)
-        mu = mu.reshape(mu.shape[0], self.num_heads, -1)
-        log_sigma = log_sigma.reshape(log_sigma.shape[0], self.num_heads, -1)
-        g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"] = k, mu, log_sigma
+        k, mu, log_sigma, covar = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h), self.fc_covar(h)
+        g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"], g.ndata["covar"] = k, mu, log_sigma, covar
         g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
         g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
+        g.apply_edges(fn.u_dot_v("k", "covar", "covar"))
 
-        with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
-            with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-                e = pyro.sample(
-                        f"e{self.idx}", 
-                        pyro.distributions.Normal(
-                        g.edata["mu"], torch.nn.functional.softplus(g.edata["log_sigma"]),
+        print(g.edata["mu"].shape)
+
+        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
+            e = pyro.sample(
+                    f"e{self.idx}", 
+                    pyro.distributions.LowRankMultivariateNormal(
+                        g.edata["mu"].squeeze(-1), 
+                        g.edata["log_sigma"].exp().squeeze(-1),
+                        g.edata["covar"],
                     ).to_event(1)
-                )
+            )
 
         return e
 
@@ -80,15 +82,14 @@ class BronxLayer(pyro.nn.PyroModule):
         return h
 
     def forward(self, g, h):
-        with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
-            with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-                e = pyro.sample(
-                        f"e{self.idx}", 
-                        pyro.distributions.Normal(
-                            torch.zeros(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                            torch.ones(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                    ).to_event(1)
-                )
+        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
+            e = pyro.sample(
+                    f"e{self.idx}", 
+                    pyro.distributions.Normal(
+                        torch.zeros(g.number_of_edges(), self.num_heads, 1, device=g.device),
+                        torch.ones(g.number_of_edges(), self.num_heads, 1, device=g.device),
+                ).to_event(1)
+            )
 
         h = self.mp(g, h, e)
         h = self.dropout(h)
