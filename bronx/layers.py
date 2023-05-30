@@ -12,7 +12,6 @@ class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
         super().__init__()
         self.gamma = gamma
-        # self.dropout = torch.nn.Dropout(dropout)
         self.dropout = dropout
 
     def forward(self, g, h, e=None):
@@ -26,8 +25,7 @@ class LinearDiffusion(torch.nn.Module):
         ] = self.gamma
         a = a / a.sum(-1, keepdims=True)
         a = torch.linalg.matrix_exp(a)
-        # a = self.dropout(a)
-        a = torch.nn.functional.dropout(a, self.dropout)
+        a = pyro.distributions.Bernoulli(1-self.dropout).sample(a.shape).to(a.device) * a
         h = a @ h
         h = h.mean(0)
         return h
@@ -67,7 +65,7 @@ class BronxLayer(pyro.nn.PyroModule):
                 e = pyro.sample(
                         f"e{self.idx}", 
                         pyro.distributions.Normal(
-                        g.edata["mu"], torch.nn.functional.softplus(g.edata["log_sigma"]),
+                        g.edata["mu"], g.edata["log_sigma"].exp(),
                     ).to_event(1)
                 )
 

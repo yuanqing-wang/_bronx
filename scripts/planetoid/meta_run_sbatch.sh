@@ -4,7 +4,7 @@ for learning_rate in 1e-2; do
 for weight_decay in 1e-5; do
 for gamma in 0.7; do
 for dropout in 0.5; do
-for edge_drop in 0.2; do
+for edge_drop in 0.2 0.4 0.6 0.8; do
 for embedding_features in 16; do
 for num_heads in 4; do
 for patience in 10; do
