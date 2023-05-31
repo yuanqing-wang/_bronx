@@ -12,7 +12,8 @@ class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
         super().__init__()
         self.gamma = gamma
-        self.dropout = torch.nn.Dropout(dropout)
+        # self.dropout = torch.nn.Dropout(dropout)
+        self.dropout = dropout
 
     def forward(self, g, h, e=None):
         a = g.adj().to_dense().unsqueeze(-1).repeat(1, 1, e.shape[-1])
@@ -25,7 +26,7 @@ class LinearDiffusion(torch.nn.Module):
         ] = self.gamma
         a = a / a.sum(-1, keepdims=True)
         a = torch.linalg.matrix_exp(a)
-        a = self.dropout(a)
+        a = pyro.distributions.Normal(a, self.dropout * torch.ones_like(a)).sample().abs()
         h = a @ h
         h = h.mean(0)
         return h
