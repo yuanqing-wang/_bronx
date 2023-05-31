@@ -8,9 +8,8 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, gamma=0.0, dropout=0.0):
+    def __init__(self, gamma, dropout=0.0):
         super().__init__()
         self.gamma = gamma
         self.dropout = torch.nn.Dropout(dropout)
@@ -25,7 +24,6 @@ class LinearDiffusion(torch.nn.Module):
         a = torch.linalg.matrix_exp(a)
         a = self.dropout(a)
         return a @ h
-
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
@@ -44,34 +42,38 @@ class BronxLayer(pyro.nn.PyroModule):
         self.linear_diffusion = LinearDiffusion(gamma=gamma, dropout=edge_drop)
 
     def guide(self, g, h):
+        h = h - h.mean(-1, keepdims=True)
+        h = torch.nn.functional.normalize(h, dim=-1)
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
         g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"] = k, mu, log_sigma
         g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
         g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            e = pyro.sample(
-                    f"e{self.idx}", 
-                    pyro.distributions.Normal(
-                    g.edata["mu"], g.edata["log_sigma"].exp(),
-               ).to_event(1)
-            )
+                # with pyro.poutine.scale(None, scale=(g.ndata["train_mask"].sum() / g.number_of_edges())):
+                e = pyro.sample(
+                        f"e{self.idx}", 
+                        pyro.distributions.LogNormal(
+                        g.edata["mu"], g.edata["log_sigma"].exp(),
+                ).to_event(1)
+                )
         return e
 
     def mp(self, g, h, e):
-        e = e / (self.out_features ** 0.5)
-        e = edge_softmax(g, e).squeeze(-1)
-        h = self.linear_diffusion(g, h, e=e)
+        # e = e / (self.out_features ** 0.5)
+        # e = edge_softmax(g, e).squeeze(-1)
+        h = self.linear_diffusion(g, h, e=e.squeeze(-1))
         return h
 
     def forward(self, g, h):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            e = pyro.sample(
-                    f"e{self.idx}", 
-                    pyro.distributions.Normal(
-                        torch.zeros(g.number_of_edges(), 1, device=g.device),
-                        torch.ones(g.number_of_edges(), 1, device=g.device),
-               ).to_event(1)
-            )
+                # with pyro.poutine.scale(None, scale=(g.ndata["train_mask"].sum() / g.number_of_edges())):
+                e = pyro.sample(
+                        f"e{self.idx}", 
+                        pyro.distributions.LogNormal(
+                            torch.zeros(g.number_of_edges(), 1, device=g.device),
+                            torch.ones(g.number_of_edges(), 1, device=g.device),
+                ).to_event(1)
+                )
 
         h = self.mp(g, h, e)
         h = self.dropout(h)

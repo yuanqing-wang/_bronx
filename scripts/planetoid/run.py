@@ -29,14 +29,25 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-
-    optimizer = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    svi = pyro.infer.SVI(model, model.guide, optimizer, loss=pyro.infer.Trace_ELBO(num_particles=1))
+    optimizer = torch.optim.Adam # ({"lr": args.learning_rate, "weight_decay": args.weight_decay})
+    scheduler = pyro.optim.ReduceLROnPlateau(
+        {
+            "optimizer": optimizer,
+            "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+            "patience": args.patience,
+            "factor": args.factor,
+            "mode": "max",
+        }
+    )
+    svi = pyro.infer.SVI(
+        model, model.guide, scheduler, 
+        loss=pyro.infer.TraceMeanField_ELBO(),
+    )
 
     accuracy_vl = []
     accuracy_te = []
 
-    for idx in range(100):
+    for idx in range(50):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
         model.eval()
@@ -84,6 +95,8 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
+    parser.add_argument("--patience", type=int, default=10)
+    parser.add_argument("--factor", type=float, default=0.5)
     args = parser.parse_args()
     print(args)
     run(args)
