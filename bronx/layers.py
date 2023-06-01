@@ -4,7 +4,7 @@ import torch
 import pyro
 from pyro import poutine
 import dgl
-dgl.use_libxsmm(False)
+# dgl.use_libxsmm(False)
 from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
@@ -71,8 +71,8 @@ class BronxLayer(pyro.nn.PyroModule):
                         f"e{self.idx}", 
                         pyro.distributions.LogNormal(
                         mu, log_sigma.exp(),
-                    )
-                ).to_event(1)
+                    ).to_event(1)
+                )
 
 
         return e
@@ -91,8 +91,8 @@ class BronxLayer(pyro.nn.PyroModule):
                         pyro.distributions.LogNormal(
                             torch.zeros(g.number_of_edges(), self.num_heads, 1, device=g.device),
                             torch.ones(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                    )
-                ).to_event(1)
+                    ).to_event(1)
+                )
 
         h = self.mp(g, h, e)
         h = self.dropout(h)
