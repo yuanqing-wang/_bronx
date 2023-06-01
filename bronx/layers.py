@@ -24,6 +24,7 @@ class LinearDiffusion(torch.nn.Module):
             ).bool().unsqueeze(0).repeat(e.shape[-1], 1, 1)
         ] = self.gamma
         a = a / a.sum(-1, keepdims=True)
+        a = self.dropout(a)
         a = torch.linalg.matrix_exp(a)
         a = self.dropout(a)
         h = a @ h
@@ -50,8 +51,8 @@ class BronxLayer(pyro.nn.PyroModule):
         )
 
     def guide(self, g, h):
-        # h = h - h.mean(-1, keepdims=True)
-        # h = torch.nn.functional.normalize(h, dim=-1)
+        h = h - h.mean(-1, keepdims=True)
+        h = torch.nn.functional.normalize(h, dim=-1)
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
         k = k.reshape(k.shape[0], self.num_heads, -1)
         mu = mu.reshape(mu.shape[0], self.num_heads, -1)
