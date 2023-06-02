@@ -77,6 +77,7 @@ class BronxLayer(pyro.nn.PyroModule):
         # e = edge_softmax(g, e).squeeze(-1)
         e = e.squeeze(-1)
         h = self.linear_diffusion(g, h, e=e)
+        h = self.dropout(h)
         return h
 
     def forward(self, g, h):
@@ -91,6 +92,5 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = self.mp(g, h, e)
-        h = self.dropout(h)
         return h
 
