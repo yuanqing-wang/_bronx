@@ -15,6 +15,7 @@ class LinearDiffusion(torch.nn.Module):
         self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, g, h, e=None):
+        # e = self.dropout(e)
         a = g.adj()
         if e is not None:
             a.val.mul_(e)
@@ -49,12 +50,12 @@ class BronxLayer(pyro.nn.PyroModule):
         g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
         g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-                # with pyro.poutine.scale(None, scale=(g.ndata["train_mask"].sum() / g.number_of_edges())):
+            with pyro.poutine.scale(None, scale=(g.ndata["train_mask"].sum() / g.number_of_edges())):
                 e = pyro.sample(
                         f"e{self.idx}", 
                         pyro.distributions.LogNormal(
                         g.edata["mu"], g.edata["log_sigma"].exp(),
-                ).to_event(1)
+                )# .to_event(1)
                 )
         return e
 
@@ -62,20 +63,20 @@ class BronxLayer(pyro.nn.PyroModule):
         # e = e / (self.out_features ** 0.5)
         # e = edge_softmax(g, e).squeeze(-1)
         h = self.linear_diffusion(g, h, e=e.squeeze(-1))
+        h = self.dropout(h)
         return h
 
     def forward(self, g, h):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-                # with pyro.poutine.scale(None, scale=(g.ndata["train_mask"].sum() / g.number_of_edges())):
+            with pyro.poutine.scale(None, scale=(g.ndata["train_mask"].sum() / g.number_of_edges())):
                 e = pyro.sample(
                         f"e{self.idx}", 
                         pyro.distributions.LogNormal(
                             torch.zeros(g.number_of_edges(), 1, device=g.device),
                             torch.ones(g.number_of_edges(), 1, device=g.device),
-                ).to_event(1)
+                )# .to_event(1)
                 )
 
         h = self.mp(g, h, e)
-        h = self.dropout(h)
         return h
 

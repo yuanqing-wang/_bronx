@@ -1,7 +1,7 @@
 for hidden_features in 64 128; do
 for embedding_features in 16 32; do
-for patience in 5 10; do
-for factor in 0.5 0.7; do
+for patience in 5 10 15; do
+for factor in 0.5 0.75 0.8 0.9; do
 for depth in 3; do
 for learning_rate in 1e-2; do
 for weight_decay in 1e-4; do
