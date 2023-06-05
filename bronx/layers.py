@@ -55,7 +55,7 @@ class BronxLayer(pyro.nn.PyroModule):
                         f"e{self.idx}", 
                         pyro.distributions.LogNormal(
                         g.edata["mu"], g.edata["log_sigma"].exp(),
-                )# .to_event(1)
+                ).to_event(1)
                 )
         return e
 
@@ -74,7 +74,7 @@ class BronxLayer(pyro.nn.PyroModule):
                         pyro.distributions.LogNormal(
                             torch.zeros(g.number_of_edges(), 1, device=g.device),
                             torch.ones(g.number_of_edges(), 1, device=g.device),
-                )# .to_event(1)
+                ).to_event(1)
                 )
 
         h = self.mp(g, h, e)

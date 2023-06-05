@@ -55,7 +55,7 @@ def run(args):
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=4, 
+                model, guide=model.guide, num_samples=1, 
                 return_sites=["_RETURN"],
             )
             
