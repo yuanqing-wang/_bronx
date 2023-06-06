@@ -20,7 +20,7 @@ class LinearDiffusion(torch.nn.Module):
         if e.dim() == 2:
             a = a.unsqueeze(-3).repeat_interleave(e.shape[-2], dim=-3)
         src, dst = g.edges()
-        a[..., src, dst] = e
+        a[..., src, dst] = e.exp()
         src = dst = torch.arange(g.number_of_nodes())
         a[..., src, dst] = self.gamma
         a = a / a.sum(-1, keepdims=True)
@@ -36,7 +36,6 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=0.0, idx=0, num_heads=4, gamma=0.0, edge_drop=0.0,
         ):
         super().__init__()
-        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.activation = activation
@@ -49,48 +48,38 @@ class BronxLayer(pyro.nn.PyroModule):
         )
 
     def guide(self, g, h):
-        h = h - h.mean(-1, keepdims=True)
-        h = torch.nn.functional.normalize(h, dim=-1)
-        k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
-        # g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"] = k, mu, log_sigma
-        # g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
-        # g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
-        # mu = g.edata["mu"]
-        # log_sigma = g.edata["log_sigma"]
-     
-        src, dst = g.edges()
-        mu = (k[..., src, :] * mu[..., dst, :]).sum(-1, keepdims=True)
-        log_sigma = (k[..., src, :] * log_sigma[..., dst, :]).sum(-1, keepdims=True)
+        with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
 
-        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_edges())):
-                e = pyro.sample(
-                        f"e{self.idx}", 
-                        pyro.distributions.LogNormal(
-                        mu, log_sigma.exp(),
-                    ).to_event(1)
+                k = pyro.sample(
+                    f"k{self.idx}",
+                    pyro.distributions.Normal(
+                        self.fc_mu(h),
+                        self.fc_log_sigma(h).exp(),
+                    ).to_event(1),
                 )
 
+        src, dst = g.edges()
+        e = (k[..., src, :] * k[..., dst, :]).sum(-1) 
         return e
 
     def mp(self, g, h, e):
-        # e = e / ((self.out_features // self.num_heads) ** 0.5)
-        # e = edge_softmax(g, e).squeeze(-1)
-        h = self.linear_diffusion(g, h, e.squeeze(-1))
+        h = self.linear_diffusion(g, h, e)
+        h = self.dropout(h)
         return h
 
     def forward(self, g, h):
-        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_edges())):
-                e = pyro.sample(
-                        f"e{self.idx}", 
-                        pyro.distributions.LogNormal(
-                            torch.zeros(g.number_of_edges(), 1, device=g.device),
-                            torch.ones(g.number_of_edges(), 1, device=g.device),
-                    ).to_event(1)
+        with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
+                k = pyro.sample(
+                    f"k{self.idx}",
+                    pyro.distributions.Normal(
+                        torch.zeros(g.number_of_nodes(), self.out_features, device=g.device),
+                        torch.ones(g.number_of_nodes(), self.out_features, device=g.device),
+                    ).to_event(1),
                 )
-
+        src, dst = g.edges()
+        e = (k[..., src, :] * k[..., dst, :]).sum(-1) 
         h = self.mp(g, h, e)
-        h = self.dropout(h)
         return h
 

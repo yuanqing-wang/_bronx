@@ -95,7 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--gamma", type=float, default=0.7)
-    parser.add_argument("--depth", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=8)
