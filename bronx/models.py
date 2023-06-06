@@ -71,10 +71,12 @@ class BronxModel(pyro.nn.PyroModule):
 
         h = self.fc_out(h)
         h = h.softmax(-1)
+        
+        print(h)
         if mask is not None:
-            h = h[mask]
+            h = h[..., mask, :]
             if y is not None:
-                y = y[mask]
+                y = y[..., mask, :]
 
         if y is not None:
             with pyro.plate("data", h.shape[0], device=h.device):
