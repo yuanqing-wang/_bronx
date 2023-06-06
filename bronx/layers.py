@@ -23,7 +23,7 @@ class LinearDiffusion(torch.nn.Module):
         a[..., src, dst] = e
         src = dst = torch.arange(g.number_of_nodes())
         a[..., src, dst] = self.gamma
-        a = self.dropout(a)
+        a = a / a.sum(-1, keepdims=True)
         a = torch.linalg.matrix_exp(a)
         a = self.dropout(a)
         h = a @ h
@@ -55,18 +55,21 @@ class BronxLayer(pyro.nn.PyroModule):
         # g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"] = k, mu, log_sigma
         # g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
         # g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
+        # mu = g.edata["mu"]
+        # log_sigma = g.edata["log_sigma"]
      
         src, dst = g.edges()
         mu = (k[..., src, :] * mu[..., dst, :]).sum(-1, keepdims=True)
         log_sigma = (k[..., src, :] * log_sigma[..., dst, :]).sum(-1, keepdims=True)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            e = pyro.sample(
-                    f"e{self.idx}", 
-                    pyro.distributions.LogNormal(
-                    mu, log_sigma.exp(),
-                ).to_event(1)
-            )
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_edges())):
+                e = pyro.sample(
+                        f"e{self.idx}", 
+                        pyro.distributions.LogNormal(
+                        mu, log_sigma.exp(),
+                    ).to_event(1)
+                )
 
         return e
 
@@ -78,13 +81,14 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            e = pyro.sample(
-                    f"e{self.idx}", 
-                    pyro.distributions.LogNormal(
-                        torch.zeros(g.number_of_edges(), 1, device=g.device),
-                        torch.ones(g.number_of_edges(), 1, device=g.device),
-                ).to_event(1)
-            )
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_edges())):
+                e = pyro.sample(
+                        f"e{self.idx}", 
+                        pyro.distributions.LogNormal(
+                            torch.zeros(g.number_of_edges(), 1, device=g.device),
+                            torch.ones(g.number_of_edges(), 1, device=g.device),
+                    ).to_event(1)
+                )
 
         h = self.mp(g, h, e)
         h = self.dropout(h)

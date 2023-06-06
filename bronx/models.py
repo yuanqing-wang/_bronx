@@ -58,6 +58,7 @@ class BronxModel(pyro.nn.PyroModule):
                     dropout=dropout,
                     edge_drop=edge_drop,
                     num_heads=num_heads,
+                    gamma=gamma,
                 )
             )
 
@@ -72,7 +73,6 @@ class BronxModel(pyro.nn.PyroModule):
         h = self.fc_out(h)
         h = h.softmax(-1)
         
-        print(h)
         if mask is not None:
             h = h[..., mask, :]
             if y is not None:

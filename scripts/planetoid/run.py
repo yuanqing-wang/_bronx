@@ -22,7 +22,6 @@ def run(args):
         dropout=args.dropout,
         depth=args.depth,
         edge_drop=args.edge_drop,
-        num_heads=args.num_heads,
     )
 
     if torch.cuda.is_available():
@@ -44,7 +43,7 @@ def run(args):
 
     svi = pyro.infer.SVI(
         model, model.guide, scheduler, 
-        loss=pyro.infer.TraceMeanField_ELBO(num_particles=1, vectorize_particles=True)
+        loss=pyro.infer.TraceMeanField_ELBO(num_particles=4, vectorize_particles=True)
     )
 
     accuracy_vl = []
@@ -57,7 +56,7 @@ def run(args):
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=1, 
+                model, guide=model.guide, num_samples=4, parallel=True,
                 return_sites=["_RETURN"],
             )
             
@@ -91,15 +90,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=128)
-    parser.add_argument("--embedding_features", type=int, default=32)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--hidden_features", type=int, default=64)
+    parser.add_argument("--embedding_features", type=int, default=16)
+    parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--gamma", type=float, default=0.7)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
-    parser.add_argument("--num_heads", type=int, default=1)
     parser.add_argument("--patience", type=int, default=8)
     parser.add_argument("--factor", type=float, default=0.5)
     args = parser.parse_args()
