@@ -49,6 +49,9 @@ class BronxLayer(pyro.nn.PyroModule):
         )
 
     def guide(self, g, h):
+        pyro.module(f"fc_k{self.idx}", self.fc_k)
+        pyro.module(f"fc_mu{self.idx}", self.fc_mu)
+        pyro.module(f"fc_log_sigma{self.idx}", self.fc_log_sigma)
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
