@@ -4,24 +4,21 @@ import pyro
 from pyro import poutine
 import dgl
 dgl.use_libxsmm(False)
-from bronx.models import LinearDiffusionModel, BronxModel
+from bronx.models import BronxModel
 
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
     g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
+    g = dgl.add_self_loop(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
     model = BronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
-        embedding_features=args.embedding_features,
-        gamma=args.gamma,
         dropout=args.dropout,
         depth=args.depth,
-        edge_drop=args.edge_drop,
     )
 
     if torch.cuda.is_available():
@@ -30,33 +27,35 @@ def run(args):
         g = g.to("cuda:0")
 
 
-    optimizer = torch.optim.Adam # ({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    scheduler = pyro.optim.ReduceLROnPlateau(
-        {
-            "optimizer": optimizer,
-            "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "patience": args.patience,
-            "factor": args.factor,
-            "mode": "max",
-        }
-    )
+    # optimizer = torch.optim.Adam # ({"lr": args.learning_rate, "weight_decay": args.weight_decay})
+    # scheduler = pyro.optim.ReduceLROnPlateau(
+    #     {
+    #         "optimizer": optimizer,
+    #         "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+    #         "patience": args.patience,
+    #         "factor": args.factor,
+    #         "mode": "max",
+    #     }
+    # )
+
+    scheduler = pyro.optim.Adam({"lr": args.learning_rate, "weight_decay": args.weight_decay})
 
     svi = pyro.infer.SVI(
         model, model.guide, scheduler, 
-        loss=pyro.infer.TraceMeanField_ELBO(num_particles=4, vectorize_particles=True)
+        loss=pyro.infer.TraceMeanField_ELBO(num_particles=64, vectorize_particles=True)
     )
 
     accuracy_vl = []
     accuracy_te = []
 
-    for idx in range(30):
+    for idx in range(10000):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
         model.eval()
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=4, parallel=True,
+                model, guide=model.guide, num_samples=64, parallel=True,
                 return_sites=["_RETURN"],
             )
             
@@ -64,7 +63,7 @@ def run(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
             accuracy_vl.append(accuracy)
-            scheduler.step(accuracy)
+            # scheduler.step(accuracy)
             print(accuracy, loss)
 
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
@@ -90,14 +89,11 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="cora")
-    parser.add_argument("--hidden_features", type=int, default=64)
-    parser.add_argument("--embedding_features", type=int, default=16)
-    parser.add_argument("--learning_rate", type=float, default=1e-2)
+    parser.add_argument("--hidden_features", type=int, default=16)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
-    parser.add_argument("--gamma", type=float, default=0.7)
-    parser.add_argument("--depth", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--dropout", type=float, default=0.5)
-    parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=8)
     parser.add_argument("--factor", type=float, default=0.5)
     args = parser.parse_args()

@@ -2,32 +2,9 @@ from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import LinearDiffusion, BronxLayer
+from .layers import BronxLayer
 
-import functools
-
-class LinearDiffusionModel(torch.nn.Module):
-    def __init__(
-            self, in_features, hidden_features, out_features,
-            activation=torch.nn.SiLU(), gamma=0.0,
-        ):
-        super().__init__()
-        self.fc_in = torch.nn.Linear(in_features, hidden_features)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features)
-        self.activation = activation
-        self.gamma = gamma
-        self.linear_diffusion = LinearDiffusion()
-
-
-    def forward(self, g, h):
-        h = self.fc_in(h)
-        h = self.activation(h)
-        h = self.linear_diffusion(g, h, gamma=self.gamma)
-        h = self.fc_out(h)
-        return h
-    
-
-class BronxModel(pyro.nn.PyroModule):
+class BronxModel(torch.nn.Module):
     def __init__(
             self, in_features, hidden_features, out_features, 
             embedding_features=None,
@@ -38,33 +15,31 @@ class BronxModel(pyro.nn.PyroModule):
             num_heads=4,
         ):
         super().__init__()
-        if embedding_features is None:
-            embedding_features = hidden_features
-        self.fc_in = torch.nn.Linear(in_features, hidden_features)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features)
+        self.fc_out = torch.nn.Sequential(
+            torch.nn.Linear(hidden_features, hidden_features),
+            activation,
+            torch.nn.Linear(hidden_features, out_features),
+        )
         self.activation = activation
         self.gamma = gamma
         self.depth = depth
 
-        for idx in range(depth):
+        self.layer0 = BronxLayer(in_features, hidden_features, idx=0)
+
+        for idx in range(1, depth):
             setattr(
                 self, 
                 f"layer{idx}", 
                 BronxLayer(
                     hidden_features, 
-                    embedding_features, 
-                    activation=activation, 
+                    hidden_features,
                     idx=idx,
-                    dropout=dropout,
-                    edge_drop=edge_drop,
-                    num_heads=num_heads,
-                    gamma=gamma,
                 )
             )
 
     def forward(self, g, h, y=None, mask=None):
-        h = self.fc_in(h)
-        h = self.activation(h)
+        # h = self.fc_in(h)
+        # h = self.activation(h)
 
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
@@ -89,12 +64,7 @@ class BronxModel(pyro.nn.PyroModule):
         return h
 
     def guide(self, g, h, y=None, mask=None):
-        h = self.fc_in(h)
-        h = self.activation(h)
-
         for idx in range(self.depth):
-            e = getattr(self, f"layer{idx}").guide(g, h)
-            h = getattr(self, f"layer{idx}").mp(g, h, e)
+            h = getattr(self, f"layer{idx}").guide(g, h)
             h = self.activation(h)
-
         return h
