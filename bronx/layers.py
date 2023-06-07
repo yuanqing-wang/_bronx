@@ -23,8 +23,8 @@ class BronxLayer(torch.nn.Module):
             in_features, out_features, idx=0,
         ):
         super().__init__()
-        self.fc_mu = torch.nn.Linear(in_features, out_features)
-        self.fc_log_sigma = torch.nn.Linear(in_features, out_features)
+        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=True)
+        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=True)
         self.idx = idx
         self.out_features = out_features
 
