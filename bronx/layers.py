@@ -16,7 +16,6 @@ def exp_adj(g, gamma=1.0):
     a.fill_diagonal_(gamma)
     a = a / a.sum(-1, keepdims=True)
     a = torch.linalg.matrix_exp(a)
-    a = a / a.sum(-1, keepdims=True)
     return a
 
 class InLayer(torch.nn.Module):
@@ -56,7 +55,6 @@ class BronxLayer(torch.nn.Module):
                             self.fc_log_sigma(h).exp(),
                         ).to_event(1),
                     )
-
         a = exp_adj(g, gamma=self.gamma)
         h = a @ h
         return h

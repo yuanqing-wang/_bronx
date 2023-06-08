@@ -45,7 +45,7 @@ def run(args):
     accuracy_vl = []
     accuracy_te = []
 
-    for idx in range(10000):
+    for idx in range(1000):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
         model.eval()
