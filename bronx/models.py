@@ -1,13 +1,11 @@
-from collections import OrderedDict
 import torch
 import pyro
-from pyro import poutine
-from .layers import BronxLayer, InLayer
+from .layers import BronxLayer
 
 class BronxModel(torch.nn.Module):
     def __init__(
             self, in_features, hidden_features, out_features, 
-            activation=torch.nn.Tanh(),
+            activation=torch.nn.SiLU(),
             depth=2, gamma=1.0, dropout=0.5,
         ):
         super().__init__()

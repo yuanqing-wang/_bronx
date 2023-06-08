@@ -11,25 +11,10 @@ from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
 @lru_cache(maxsize=1)
-def exp_adj(g, gamma=1.0):
+def adj(g):
     a = g.adj().to_dense()
-    a.fill_diagonal_(gamma)
-    a = a / a.sum(-1, keepdims=True)
-    a = torch.linalg.matrix_exp(a)
+    a = a / a.sum(-1, keepdim=True).clamp_min(1)
     return a
-
-class InLayer(torch.nn.Module):
-    def __init__(
-            self, in_features, out_features, gamma=1.0,
-    ):
-        super().__init__()
-        self.fc = torch.nn.Linear(in_features, out_features, bias=False)
-        self.gamma = gamma
-    
-    def forward(self, g, h):
-        h = self.fc(h)
-        h = exp_adj(g, gamma=self.gamma) @ h
-        return h
 
 class BronxLayer(torch.nn.Module):
     def __init__(
@@ -42,6 +27,7 @@ class BronxLayer(torch.nn.Module):
         self.idx = idx
         self.out_features = out_features
         self.gamma = gamma
+        self.dropout = torch.nn.Dropout(0.5)
 
     def guide(self, g, h):
         pyro.module(f"fc_mu{self.idx}", self.fc_mu)
@@ -55,8 +41,8 @@ class BronxLayer(torch.nn.Module):
                             self.fc_log_sigma(h).exp(),
                         ).to_event(1),
                     )
-        a = exp_adj(g, gamma=self.gamma)
-        h = a @ h
+        h = self.dropout(h)
+        h = adj(g) @ h
         return h
 
     def forward(self, g, h):
@@ -69,8 +55,7 @@ class BronxLayer(torch.nn.Module):
                                 torch.ones(g.number_of_nodes(), self.out_features, device=g.device),
                             ).to_event(1),
                 )
-
-        a = exp_adj(g, gamma=self.gamma)
-        h = a @ h
+        h = self.dropout(h)
+        h = adj(g) @ h
         return h
 

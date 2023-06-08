@@ -88,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--patience", type=int, default=8)
     parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--gamma", type=float, default=0.2)
