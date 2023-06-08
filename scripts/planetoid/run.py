@@ -39,7 +39,7 @@ def run(args):
 
     svi = pyro.infer.SVI(
         model, model.guide, scheduler, 
-        loss=pyro.infer.TraceMeanField_ELBO(num_particles=32, vectorize_particles=True)
+        loss=pyro.infer.TraceMeanField_ELBO(num_particles=4, vectorize_particles=True)
     )
 
     accuracy_vl = []
@@ -52,7 +52,7 @@ def run(args):
 
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=32, parallel=True,
+                model, guide=model.guide, num_samples=4, parallel=True,
                 return_sites=["_RETURN"],
             )
             
@@ -87,8 +87,8 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="cora")
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--patience", type=int, default=8)
     parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--gamma", type=float, default=0.2)

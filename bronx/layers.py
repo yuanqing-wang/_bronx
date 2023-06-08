@@ -1,4 +1,4 @@
-from math import exp
+import math
 from typing import Optional, Callable
 from functools import partial, lru_cache
 import torch
@@ -18,6 +18,14 @@ def exp_adj(g, gamma=1.0):
     a = torch.linalg.matrix_exp(a)
     return a
 
+@torch.jit.script
+def approximate_matrix_exp(a, k:int=4):
+    result = a
+    for i in range(2, k):
+        a = a @ a
+        result = result + a / math.factorial(i)
+    return result
+
 class InLayer(torch.nn.Module):
     def __init__(
             self, in_features, out_features, gamma=1.0,
@@ -34,18 +42,23 @@ class InLayer(torch.nn.Module):
 class BronxLayer(torch.nn.Module):
     def __init__(
             self, 
-            in_features, out_features, gamma=1.0, idx=0,
+            in_features, out_features, gamma=1.0, idx=0, embedding_features=8,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_k = torch.nn.Linear(out_features, embedding_features, bias=False)
+        self.fc_q = torch.nn.Linear(out_features, embedding_features, bias=False)
         self.idx = idx
         self.out_features = out_features
+        self.embedding_features = embedding_features
         self.gamma = gamma
 
     def guide(self, g, h):
         pyro.module(f"fc_mu{self.idx}", self.fc_mu)
         pyro.module(f"fc_log_sigma{self.idx}", self.fc_log_sigma)
+        pyro.module(f"fc_k{self.idx}", self.fc_k)
+        pyro.module(f"fc_q{self.idx}", self.fc_q)
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
             with pyro.poutine.scale(None, scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
                 h = pyro.sample(
@@ -55,11 +68,12 @@ class BronxLayer(torch.nn.Module):
                             self.fc_log_sigma(h).exp(),
                         ).to_event(1),
                     )
-        a = exp_adj(g, gamma=self.gamma)
-        h = a @ h
+                
         return h
 
     def forward(self, g, h):
+        pyro.module(f"fc_k{self.idx}", self.fc_k)
+        pyro.module(f"fc_q{self.idx}", self.fc_q)
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
             with pyro.poutine.scale(None, scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
                 h = pyro.sample(
@@ -70,7 +84,14 @@ class BronxLayer(torch.nn.Module):
                             ).to_event(1),
                 )
 
-        a = exp_adj(g, gamma=self.gamma)
+        h = h - h.mean(-1, keepdims=True)
+        h = torch.nn.functional.normalize(h, dim=-1)
+        k, q = self.fc_k(h), self.fc_q(h)
+        a_att = (k @ q.transpose(-1, -2) / (self.embedding_features ** 0.5)).softmax(-1)
+        a = g.adj().to_dense() * a_att
+        a = a / a.sum(-1, keepdims=True)
+        # a = torch.linalg.matrix_exp(a)
+        a = approximate_matrix_exp(a)
         h = a @ h
         return h
 
