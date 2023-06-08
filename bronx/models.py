@@ -2,30 +2,21 @@ from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import BronxLayer
+from .layers import BronxLayer, InLayer
 
 class BronxModel(torch.nn.Module):
     def __init__(
             self, in_features, hidden_features, out_features, 
-            embedding_features=None,
-            activation=torch.nn.SiLU(), gamma=0.0,
-            depth=2,
-            dropout=0.0,
-            edge_drop=0.0,
-            num_heads=4,
+            activation=torch.nn.Tanh(),
+            depth=2, gamma=1.0, dropout=0.5,
         ):
         super().__init__()
-        self.fc_out = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features, hidden_features),
-            activation,
-            torch.nn.Linear(hidden_features, out_features),
-        )
+        # self.fc_in = InLayer(in_features, hidden_features)
+        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.activation = activation
-        self.gamma = gamma
         self.depth = depth
-
-        self.layer0 = BronxLayer(in_features, hidden_features, idx=0)
-
+        self.layer0 = BronxLayer(in_features, hidden_features, gamma=gamma, idx=0)
+        self.dropout = torch.nn.Dropout(dropout)
         for idx in range(1, depth):
             setattr(
                 self, 
@@ -34,13 +25,13 @@ class BronxModel(torch.nn.Module):
                     hidden_features, 
                     hidden_features,
                     idx=idx,
+                    gamma=gamma,
                 )
             )
 
     def forward(self, g, h, y=None, mask=None):
-        # h = self.fc_in(h)
+        # h = self.fc_in(g, h)
         # h = self.activation(h)
-
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
             h = self.activation(h)
@@ -64,6 +55,8 @@ class BronxModel(torch.nn.Module):
         return h
 
     def guide(self, g, h, y=None, mask=None):
+        # h = self.fc_in(g, h)
+        # h = self.activation(h)
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
             h = self.activation(h)
