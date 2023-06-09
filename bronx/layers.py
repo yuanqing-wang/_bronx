@@ -34,7 +34,7 @@ class InLayer(torch.nn.Module):
 class BronxLayer(torch.nn.Module):
     def __init__(
             self, 
-            in_features, out_features, gamma=1.0, idx=0,
+            in_features, out_features, gamma=1.0, idx=0, dropout=0.2,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -42,6 +42,7 @@ class BronxLayer(torch.nn.Module):
         self.idx = idx
         self.out_features = out_features
         self.gamma = gamma
+        self.register_buffer("dropout", torch.tensor(dropout))
 
     def guide(self, g, h):
         pyro.module(f"fc_mu{self.idx}", self.fc_mu)
@@ -54,12 +55,14 @@ class BronxLayer(torch.nn.Module):
                             self.fc_mu(h), 
                             self.fc_log_sigma(h).exp(),
                         ).to_event(1),
-                    )
+                )
+
         a = exp_adj(g, gamma=self.gamma)
         h = a @ h
         return h
 
     def forward(self, g, h):
+        pyro.module(f"fc_mu{self.idx}", self.fc_mu)
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
             with pyro.poutine.scale(None, scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
                 h = pyro.sample(

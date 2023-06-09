@@ -1,10 +1,10 @@
-for hidden_features in 64 128; do
-for depth in 2 3; do
-for learning_rate in 1e-2 1e-3; do
-for weight_decay in 1e-5 1e-4; do
+for hidden_features in 64; do
+for depth in 2 3 4 5 6; do
+for learning_rate in 1e-2 1e-3 1e-5; do
+for weight_decay in 1e-4; do
 for gamma in 1.0; do
-for patience in 5 10; do
-for factor in 0.5 0.8; do
+for patience in 8; do
+for factor in 0.5; do
 
 sbatch \
 	--nodes=1 \
