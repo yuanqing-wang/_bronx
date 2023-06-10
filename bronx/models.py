@@ -2,7 +2,7 @@ from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import BronxLayer, InLayer
+from .layers import BronxLayer
 
 class BronxModel(torch.nn.Module):
     def __init__(
