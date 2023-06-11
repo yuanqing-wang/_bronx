@@ -14,6 +14,7 @@ from dgl.nn.functional import edge_softmax
 @lru_cache(maxsize=1)
 def get_candidates(g, k=4):
     a = g.adj().to_dense()
+    a = a / a.sum(-1, keepdim=True)
     return torch.stack([torch.matrix_power(a, i) for i in range(1, k + 1)])
 
 @lru_cache(maxsize=1)
