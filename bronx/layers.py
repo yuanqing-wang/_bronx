@@ -39,6 +39,7 @@ class BronxLayer(torch.nn.Module):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc = torch.nn.Linear(in_features, out_features, bias=False)
         self.idx = idx
         self.out_features = out_features
         self.gamma = gamma
@@ -47,6 +48,8 @@ class BronxLayer(torch.nn.Module):
     def guide(self, g, h):
         pyro.module(f"fc_mu{self.idx}", self.fc_mu)
         pyro.module(f"fc_log_sigma{self.idx}", self.fc_log_sigma)
+        pyro.module(f"fc{self.idx}", self.fc)
+        h0 = self.fc(h)
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
             with pyro.poutine.scale(None, scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
                 h = pyro.sample(
@@ -56,13 +59,14 @@ class BronxLayer(torch.nn.Module):
                             self.fc_log_sigma(h).exp(),
                         ).to_event(1),
                 )
-
+        h = h0 + h
         a = exp_adj(g, gamma=self.gamma)
         h = a @ h
         return h
 
     def forward(self, g, h):
-        pyro.module(f"fc_mu{self.idx}", self.fc_mu)
+        pyro.module(f"fc{self.idx}", self.fc)
+        h0 = self.fc(h)
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes(), device=g.device):
             with pyro.poutine.scale(None, scale=float(g.ndata["train_mask"].sum() / g.number_of_nodes())):
                 h = pyro.sample(
@@ -72,7 +76,7 @@ class BronxLayer(torch.nn.Module):
                                 torch.ones(g.number_of_nodes(), self.out_features, device=g.device),
                             ).to_event(1),
                 )
-
+        h = h0 + h
         a = exp_adj(g, gamma=self.gamma)
         h = a @ h
         return h
