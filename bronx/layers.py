@@ -1,5 +1,4 @@
-from typing import Optional, Callable
-from functools import partial
+import math
 import torch
 import pyro
 from pyro import poutine
@@ -8,6 +7,14 @@ import dgl
 from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
+
+@torch.jit.script
+def approximate_matrix_exp(a, k:int=6):
+    result = a
+    for i in range(1, k):
+        a = a @ a
+        result = result + a / math.factorial(i)
+    return result
 
 class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
@@ -20,11 +27,12 @@ class LinearDiffusion(torch.nn.Module):
         if e.dim() == 2:
             a = a.unsqueeze(-3).repeat_interleave(e.shape[-2], dim=-3)
         src, dst = g.edges()
-        a[..., src, dst] = e.exp()
+        a[..., src, dst] = e
         src = dst = torch.arange(g.number_of_nodes())
         a[..., src, dst] = self.gamma
         a = a / a.sum(-1, keepdims=True)
         a = torch.linalg.matrix_exp(a)
+        # a = approximate_matrix_exp(a)
         a = self.dropout(a)
         h = a @ h
         return h
@@ -59,8 +67,20 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(1),
                 )
 
-        src, dst = g.edges()
-        e = (k[..., src, :] * k[..., dst, :]).sum(-1) 
+        if k.dim() == 3:
+            parallel = True
+        else:
+            parallel = False
+
+        if parallel:
+            k = k.swapaxes(0, 1)
+
+        g.ndata["k"] = k
+        g.apply_edges(fn.u_dot_v("k", "k", "e"))
+        # e = edge_softmax(g, g.edata["e"]).squeeze(-1)
+        e = g.edata["e"].exp().squeeze(-1)
+        if parallel:
+            e = e.swapaxes(0, 1)
         return e
 
     def mp(self, g, h, e):
@@ -78,8 +98,20 @@ class BronxLayer(pyro.nn.PyroModule):
                         torch.ones(g.number_of_nodes(), self.out_features, device=g.device),
                     ).to_event(1),
                 )
-        src, dst = g.edges()
-        e = (k[..., src, :] * k[..., dst, :]).sum(-1) 
+        if k.dim() == 3:
+            parallel = True
+        else:
+            parallel = False
+
+        if parallel:
+            k = k.swapaxes(0, 1)
+
+        g.ndata["k"] = k
+        g.apply_edges(fn.u_dot_v("k", "k", "e"))
+        # e = edge_softmax(g, g.edata["e"]).squeeze(-1)
+        e = g.edata["e"].exp().squeeze(-1)
+        if parallel:
+            e = e.swapaxes(0, 1)
         h = self.mp(g, h, e)
         return h
 
