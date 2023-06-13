@@ -26,7 +26,6 @@ class LinearDiffusionModel(torch.nn.Module):
         h = self.fc_out(h)
         return h
     
-
 class BronxModel(pyro.nn.PyroModule):
     def __init__(
             self, in_features, hidden_features, out_features, 

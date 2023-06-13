@@ -11,7 +11,7 @@ from dgl.nn.functional import edge_softmax
 @torch.jit.script
 def approximate_matrix_exp(a, k:int=6):
     result = a
-    for i in range(1, k):
+    for i in range(k-1):
         a = a @ a
         result = result + a / math.factorial(i)
     return result
@@ -31,8 +31,8 @@ class LinearDiffusion(torch.nn.Module):
         src = dst = torch.arange(g.number_of_nodes())
         a[..., src, dst] = self.gamma
         a = a / a.sum(-1, keepdims=True)
-        a = torch.linalg.matrix_exp(a)
-        # a = approximate_matrix_exp(a)
+        # a = torch.linalg.matrix_exp(a)
+        a = approximate_matrix_exp(a)
         a = self.dropout(a)
         h = a @ h
         return h
