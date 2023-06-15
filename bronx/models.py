@@ -26,7 +26,6 @@ class LinearDiffusionModel(torch.nn.Module):
         h = self.fc_out(h)
         return h
     
-
 class BronxModel(pyro.nn.PyroModule):
     def __init__(
             self, in_features, hidden_features, out_features, 
@@ -79,10 +78,10 @@ class BronxModel(pyro.nn.PyroModule):
                 y = y[..., mask, :]
 
         if y is not None:
-            with pyro.plate("data", h.shape[0], device=h.device):
+            with pyro.plate("data", y.shape[0], device=h.device):
                 pyro.sample(
                     "y", 
-                    pyro.distributions.OneHotCategorical(h).to_event(1), 
+                    pyro.distributions.OneHotCategorical(h), 
                     obs=y,
                 )
 

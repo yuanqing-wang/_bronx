@@ -1,3 +1,4 @@
+import math
 from typing import Optional, Callable
 from functools import partial
 import torch
@@ -8,6 +9,14 @@ import dgl
 from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
+
+@torch.jit.script
+def approximate_matrix_exp(a, k:int=6):
+    result = a
+    for i in range(1, k):
+        a = a @ a
+        result = result + a / math.factorial(i)
+    return result
 
 class LinearDiffusion(torch.nn.Module):
     def __init__(self, gamma=0.0, dropout=0.0):
@@ -21,11 +30,11 @@ class LinearDiffusion(torch.nn.Module):
             a = a.unsqueeze(-3).repeat_interleave(e.shape[-2], dim=-3)
         src, dst = g.edges()
         a[..., src, dst] = e
+        a = a + a.transpose(-1, -2)
         src = dst = torch.arange(g.number_of_nodes())
         a[..., src, dst] = self.gamma
         a = a / a.sum(-1, keepdims=True)
-        a = torch.linalg.matrix_exp(a)
-        a = self.dropout(a)
+        a = approximate_matrix_exp(a)
         h = a @ h
         return h
 
@@ -52,18 +61,13 @@ class BronxLayer(pyro.nn.PyroModule):
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
         k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
-        # g.ndata["k"], g.ndata["mu"], g.ndata["log_sigma"] = k, mu, log_sigma
-        # g.apply_edges(fn.u_dot_v("k", "mu", "mu"))
-        # g.apply_edges(fn.u_dot_v("k", "log_sigma", "log_sigma"))
-        # mu = g.edata["mu"]
-        # log_sigma = g.edata["log_sigma"]
      
         src, dst = g.edges()
         mu = (k[..., src, :] * mu[..., dst, :]).sum(-1, keepdims=True)
         log_sigma = (k[..., src, :] * log_sigma[..., dst, :]).sum(-1, keepdims=True)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_edges())):
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
                 e = pyro.sample(
                         f"e{self.idx}", 
                         pyro.distributions.LogNormal(
@@ -74,14 +78,13 @@ class BronxLayer(pyro.nn.PyroModule):
         return e
 
     def mp(self, g, h, e):
-        # e = e / ((self.out_features // self.num_heads) ** 0.5)
         # e = edge_softmax(g, e).squeeze(-1)
         h = self.linear_diffusion(g, h, e.squeeze(-1))
         return h
 
     def forward(self, g, h):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / g.number_of_edges())):
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
                 e = pyro.sample(
                         f"e{self.idx}", 
                         pyro.distributions.LogNormal(
