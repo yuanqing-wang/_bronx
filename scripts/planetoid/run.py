@@ -1,92 +1,53 @@
-import numpy as np
-import torch
-import pyro
-from pyro import poutine
+from functools import partial
+import numpy as onp
+import jax
+from jax import numpy as jnp
+import numpyro
 import dgl
 dgl.use_libxsmm(False)
-from bronx.models import LinearDiffusionModel, BronxModel
+from bronx.models import bronx_model, bronx_guide
 
 def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
-    g = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
-    g = dgl.remove_self_loop(g)
-    src, dst = g.edges()
-    eids = torch.where(src > dst)[0]
-    g = dgl.remove_edges(g, eids)
-    g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
+    G = locals()[f"{args.data.capitalize()}GraphDataset"]()[0]
+    SRC, DST = G.edges()
+    SRC, DST = jnp.array(SRC), jnp.array(DST)
+    SRC, DST = SRC[SRC < DST], DST[SRC < DST]
+    H = jnp.array(G.ndata["feat"])
+    Y = jnp.array(G.ndata["label"])
+    Y = jax.nn.one_hot(Y, Y.max() + 1)
+    TRAIN_MASK = jnp.array(G.ndata["train_mask"])
+    VAL_MASK = jnp.array(G.ndata["val_mask"])
+    TEST_MASK = jnp.array(G.ndata["test_mask"])
+    SCALE = TRAIN_MASK.sum() / len(SRC)
 
-    model = BronxModel(
-        in_features=g.ndata["feat"].shape[-1],
-        out_features=g.ndata["label"].shape[-1],
-        hidden_features=args.hidden_features,
-        embedding_features=args.embedding_features,
+    model = partial(
+        bronx_model,
         gamma=args.gamma,
-        dropout=args.dropout,
+        scale=SCALE,
+        in_features=H.shape[-1],
+        out_features=Y.shape[-1],
+        hidden_features=args.hidden_features,
         depth=args.depth,
-        edge_drop=args.edge_drop,
+        activation=jax.nn.silu,
     )
 
-
-    if torch.cuda.is_available():
-        # a = a.cuda()
-        model = model.cuda()
-        g = g.to("cuda:0")
-
-    optimizer = torch.optim.Adam # ({"lr": args.learning_rate, "weight_decay": args.weight_decay})
-    scheduler = pyro.optim.ReduceLROnPlateau(
-        {
-            "optimizer": optimizer,
-            "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "patience": args.patience,
-            "factor": args.factor,
-            "mode": "max",
-        }
+    guide = partial(
+        bronx_guide,
+        gamma=args.gamma,
+        scale=SCALE,
+        in_features=H.shape[-1],
+        out_features=Y.shape[-1],
+        hidden_features=args.hidden_features,
+        depth=args.depth,
+        activation=jax.nn.silu,
     )
 
-    svi = pyro.infer.SVI(
-        model, model.guide, scheduler, 
-        loss=pyro.infer.TraceMeanField_ELBO(num_particles=args.num_particles, vectorize_particles=True)
+    optimizer = numpyro.optim.Adam(1e-2)
+    svi = numpyro.infer.SVI(
+        model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO()
     )
-
-    accuracy_vl = []
-    accuracy_te = []
-
-    for idx in range(500):
-        model.train()
-        loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
-        model.eval()
-
-        with torch.no_grad():
-            predictive = pyro.infer.Predictive(
-                model, guide=model.guide, num_samples=args.num_samples, parallel=True,
-                return_sites=["_RETURN"],
-            )
-            
-            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])["_RETURN"].mean(0)
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_vl.append(accuracy)
-            scheduler.step(accuracy)
-            print(accuracy, loss)
-
-            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
-            y = g.ndata["label"][g.ndata["test_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            accuracy_te.append(accuracy)
-
-    accuracy_vl = np.array(accuracy_vl)
-    accuracy_te = np.array(accuracy_te)
-
-    print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
-
-    import pandas as pd
-    df = vars(args)
-    df["accuracy_vl"] = accuracy_vl.max()
-    df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
-    df = pd.DataFrame.from_dict([df])
-    import os
-    header = not os.path.exists("performance.csv")
-    df.to_csv("performance.csv", mode="a", header=header)
+    result = svi.run(jax.random.PRNGKey(2666), 1000, SRC, DST, H, Y, TRAIN_MASK)
 
 if __name__ == "__main__":
     import argparse
