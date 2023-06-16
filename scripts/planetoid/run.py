@@ -20,12 +20,10 @@ def run(args):
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
         embedding_features=args.embedding_features,
-        gamma=args.gamma,
         dropout=args.dropout,
         depth=args.depth,
         edge_drop=args.edge_drop,
     )
-
 
     if torch.cuda.is_available():
         # a = a.cuda()
@@ -96,14 +94,13 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=8)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--gamma", type=float, default=0.7)
-    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=16)
-    parser.add_argument("--num_particles", type=int, default=16)
+    parser.add_argument("--num_samples", type=int, default=64)
+    parser.add_argument("--num_particles", type=int, default=64)
     args = parser.parse_args()
     print(args)
     run(args)

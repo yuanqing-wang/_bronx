@@ -30,7 +30,7 @@ class BronxModel(pyro.nn.PyroModule):
     def __init__(
             self, in_features, hidden_features, out_features, 
             embedding_features=None,
-            activation=torch.nn.SiLU(), gamma=0.0,
+            activation=torch.nn.SiLU(),
             depth=2,
             dropout=0.0,
             edge_drop=0.0,
@@ -42,7 +42,6 @@ class BronxModel(pyro.nn.PyroModule):
         self.fc_in = torch.nn.Linear(in_features, hidden_features)
         self.fc_out = torch.nn.Linear(hidden_features, out_features)
         self.activation = activation
-        self.gamma = gamma
         self.depth = depth
 
         for idx in range(depth):
@@ -57,7 +56,6 @@ class BronxModel(pyro.nn.PyroModule):
                     dropout=dropout,
                     edge_drop=edge_drop,
                     num_heads=num_heads,
-                    gamma=gamma,
                 )
             )
 

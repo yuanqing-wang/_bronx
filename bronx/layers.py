@@ -18,31 +18,29 @@ def approximate_matrix_exp(a, k:int=6):
         result = result + a / math.factorial(i)
     return result
 
-@torch.jit.script
 def expmm(a, b, k:int=6):
     x = b
     result = x
-    for i in range(1, k):
-        x = torch.bmm(a, x) / math.factorial(i)
-        result = result + x
+    for i in range(1, k+1):
+        x = a @ x
+        result = result + x / math.factorial(i)
     return result
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, dropout=0.0):
+    def __init__(self, dropout=0.0, gamma=0.7):
         super().__init__()
         self.dropout = torch.nn.Dropout(dropout)
+        self.gamma = gamma
 
     def forward(self, g, h, e=None):
+        a = g.adj().to_dense()
+        if e.dim() == 2:
+            a = a.unsqueeze(-3).repeat_interleave(e.shape[-2], dim=-3)
         src, dst = g.edges()
-        idxs = torch.stack([src, dst], dim=0)
-        idxs = idxs.broadcast_to(h.shape[:-2] + idxs.shape)
-        a = torch.sparse_coo_tensor(
-            idxs, e,
-            size=(g.number_of_nodes(), g.number_of_nodes()),
-        )
+        a[..., src, dst] = e
+        a[..., dst, src] = e
         a = a / a.sum(-1, keepdims=True)
-        a = approximate_matrix_exp(a)
-        h = a @ h
+        h = expmm(a, h)
         return h
 
 class BronxLayer(pyro.nn.PyroModule):
