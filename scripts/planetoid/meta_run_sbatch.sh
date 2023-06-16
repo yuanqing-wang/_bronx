@@ -12,7 +12,7 @@ sbatch \
 	--nodes=1 \
 	--ntasks-per-node=1 \
 	--cpus-per-task=1 \
-	--time=00:30:00 \
+	--time=00:10:00 \
 	--mem=5GB \
 	--job-name=aperol \
     --gres=gpu:1 \

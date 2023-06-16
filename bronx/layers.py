@@ -50,7 +50,7 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=0.0, idx=0, num_heads=4, edge_drop=0.0,
         ):
         super().__init__()
-        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+        # self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.activation = activation
@@ -63,11 +63,11 @@ class BronxLayer(pyro.nn.PyroModule):
     def guide(self, g, h):
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
-        k, mu, log_sigma = self.fc_k(h), self.fc_mu(h), self.fc_log_sigma(h)
+        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
      
         src, dst = g.edges()
-        mu = (k[..., src, :] * mu[..., dst, :]).sum(-1, keepdims=True)
-        log_sigma = (k[..., src, :] * log_sigma[..., dst, :]).sum(-1, keepdims=True)
+        mu = (mu[..., src, :] * mu[..., dst, :]).sum(-1, keepdims=True)
+        log_sigma = (log_sigma[..., src, :] * log_sigma[..., dst, :]).sum(-1, keepdims=True)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
