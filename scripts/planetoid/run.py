@@ -94,7 +94,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=8)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=6)
+    parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--edge_drop", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=5)
