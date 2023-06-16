@@ -18,21 +18,28 @@ def approximate_matrix_exp(a, k:int=6):
         result = result + a / math.factorial(i)
     return result
 
+@torch.jit.script
+def expmm(a, b, k:int=6):
+    x = b
+    result = x
+    for i in range(1, k):
+        x = torch.bmm(a, x) / math.factorial(i)
+        result = result + x
+    return result
+
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, gamma=0.0, dropout=0.0):
+    def __init__(self, dropout=0.0):
         super().__init__()
-        self.gamma = gamma
         self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, g, h, e=None):
-        a = g.adj().to_dense()
-        if e.dim() == 2:
-            a = a.unsqueeze(-3).repeat_interleave(e.shape[-2], dim=-3)
         src, dst = g.edges()
-        a[..., src, dst] = e
-        a = a + a.transpose(-1, -2)
-        src = dst = torch.arange(g.number_of_nodes())
-        a[..., src, dst] = self.gamma
+        idxs = torch.stack([src, dst], dim=0)
+        idxs = idxs.broadcast_to(h.shape[:-2] + idxs.shape)
+        a = torch.sparse_coo_tensor(
+            idxs, e,
+            size=(g.number_of_nodes(), g.number_of_nodes()),
+        )
         a = a / a.sum(-1, keepdims=True)
         a = approximate_matrix_exp(a)
         h = a @ h
@@ -42,7 +49,7 @@ class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
             in_features, out_features, activation=torch.nn.SiLU(), 
-            dropout=0.0, idx=0, num_heads=4, gamma=0.0, edge_drop=0.0,
+            dropout=0.0, idx=0, num_heads=4, edge_drop=0.0,
         ):
         super().__init__()
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
@@ -53,9 +60,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.out_features = out_features
         self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
-        self.linear_diffusion = LinearDiffusion(
-            dropout=edge_drop, gamma=gamma,
-        )
+        self.linear_diffusion = LinearDiffusion()
 
     def guide(self, g, h):
         h = h - h.mean(-1, keepdims=True)
