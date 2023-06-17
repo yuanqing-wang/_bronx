@@ -10,38 +10,27 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-@torch.jit.script
-def approximate_matrix_exp(a, k:int=6):
-    result = a
-    for i in range(1, k):
-        a = a @ a
-        result = result + a / math.factorial(i)
-    return result
 
-def expmm(a, b, k:int=6):
-    x = b
-    result = x
+def linear_diffusion(g, h, e, k:int=6):
+    g = g.local_var()
+    parallel = e.dim() == 2
+    if parallel:
+        if h.dim() == 2:
+            h = h.broadcast_to(e.shape[0], *h.shape)
+        e, h = e.swapaxes(0, 1), h.swapaxes(0, 1)
+
+    g.edata["e"] = e
+    g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
+    g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
+    g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
+    g.ndata["x"] = h
+    result = h
     for i in range(1, k+1):
-        x = a @ x
-        result = result + x / math.factorial(i)
+        g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
+        result = result + g.ndata["x"] / math.factorial(i)
+    if parallel:
+        result = result.swapaxes(0, 1)
     return result
-
-class LinearDiffusion(torch.nn.Module):
-    def __init__(self, dropout=0.0, gamma=0.7):
-        super().__init__()
-        self.dropout = torch.nn.Dropout(dropout)
-        self.gamma = gamma
-
-    def forward(self, g, h, e=None):
-        a = g.adj().to_dense()
-        if e.dim() == 2:
-            a = a.unsqueeze(-3).repeat_interleave(e.shape[-2], dim=-3)
-        src, dst = g.edges()
-        a[..., src, dst] = e
-        a[..., dst, src] = e
-        a = a / a.sum(-1, keepdims=True)
-        h = expmm(a, h)
-        return h
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
@@ -58,16 +47,25 @@ class BronxLayer(pyro.nn.PyroModule):
         self.out_features = out_features
         self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
-        self.linear_diffusion = LinearDiffusion()
 
     def guide(self, g, h):
+        g = g.local_var()
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
         mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
      
-        src, dst = g.edges()
-        mu = (mu[..., src, :] * mu[..., dst, :]).sum(-1, keepdims=True)
-        log_sigma = (log_sigma[..., src, :] * log_sigma[..., dst, :]).sum(-1, keepdims=True)
+        parallel = h.dim() == 3
+
+        if parallel:
+            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+
+        g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
+        g.apply_edges(dgl.function.u_dot_v("mu", "mu", "mu"))
+        g.apply_edges(dgl.function.u_dot_v("log_sigma", "log_sigma", "log_sigma"))
+        mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
+
+        if parallel:
+            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
@@ -81,8 +79,7 @@ class BronxLayer(pyro.nn.PyroModule):
         return e
 
     def mp(self, g, h, e):
-        # e = edge_softmax(g, e).squeeze(-1)
-        h = self.linear_diffusion(g, h, e.squeeze(-1))
+        h = linear_diffusion(g, h, e.squeeze(-1))
         return h
 
     def forward(self, g, h):

@@ -2,7 +2,7 @@ from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import LinearDiffusion, BronxLayer
+from .layers import BronxLayer
 
 import functools
 
