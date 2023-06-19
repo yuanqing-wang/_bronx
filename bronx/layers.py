@@ -13,7 +13,7 @@ from dgl.nn.functional import edge_softmax
 
 def linear_diffusion(g, h, e, k:int=6):
     g = g.local_var()
-    parallel = e.dim() == 2
+    parallel = e.dim() == 3
     if parallel:
         if h.dim() == 2:
             h = h.broadcast_to(e.shape[0], *h.shape)
@@ -47,6 +47,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.out_features = out_features
         self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
+        self.norm = torch.nn.LayerNorm(in_features)
 
     def guide(self, g, h):
         g = g.local_var()
@@ -79,10 +80,11 @@ class BronxLayer(pyro.nn.PyroModule):
         return e
 
     def mp(self, g, h, e):
-        h = linear_diffusion(g, h, e.squeeze(-1))
+        h = linear_diffusion(g, h, e)
         return h
 
     def forward(self, g, h):
+        g = g.local_var()
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
                 e = pyro.sample(

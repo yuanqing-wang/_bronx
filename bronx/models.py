@@ -1,3 +1,4 @@
+from audioop import bias
 from collections import OrderedDict
 import torch
 import pyro
@@ -39,8 +40,8 @@ class BronxModel(pyro.nn.PyroModule):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
-        self.fc_in = torch.nn.Linear(in_features, hidden_features)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features)
+        self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.activation = activation
         self.depth = depth
 
