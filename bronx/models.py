@@ -3,7 +3,7 @@ from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import BronxLayer
+from .layers import BronxLayer, Linear
 
 import functools
 
@@ -43,6 +43,7 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
+
         self.activation = activation
         self.depth = depth
 
@@ -92,8 +93,7 @@ class BronxModel(pyro.nn.PyroModule):
         h = self.activation(h)
 
         for idx in range(self.depth):
-            e = getattr(self, f"layer{idx}").guide(g, h)
-            h = getattr(self, f"layer{idx}").mp(g, h, e)
+            h = getattr(self, f"layer{idx}").guide(g, h)
             h = self.activation(h)
 
         return h
