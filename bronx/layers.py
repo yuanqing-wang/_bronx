@@ -11,13 +11,14 @@ from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
 
-def linear_diffusion(g, h, e, k:int=6):
+def linear_diffusion(g, h, e, coefficients):
     g = g.local_var()
     parallel = e.dim() == 4
     if parallel:
         if h.dim() == 2:
             h = h.broadcast_to(e.shape[0], *h.shape)
         e, h = e.swapaxes(0, 1), h.swapaxes(0, 1)
+        coefficients = coefficients.unsqueeze(-3).unsqueeze(-2)
 
     h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
     g.edata["e"] = e
@@ -26,14 +27,49 @@ def linear_diffusion(g, h, e, k:int=6):
     g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
     g.ndata["x"] = h
     result = h
-    for i in range(1, k+1):
+    k = coefficients.shape[-1]
+
+    for i in range(k):
         g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
-        result = result + g.ndata["x"] / math.factorial(i)
+        result = result + g.ndata["x"] * coefficients[..., i, None]
     if parallel:
         result = result.swapaxes(0, 1)
 
     result = result.flatten(-2, -1)
     return result
+
+
+class LinearDiffusion(pyro.nn.PyroModule):
+    def __init__(self, k, idx=0):
+        super().__init__()
+        self.k = k
+        self.register_buffer("coefficients", torch.tensor([1 / math.factorial(i) for i in range(1, k+1)]))
+        self.mu = torch.nn.Parameter(torch.zeros(k))
+        self.coefficients_log_sigma = torch.nn.Parameter(torch.zeros(k))
+        self.idx = idx
+
+    def forward(self, g, h, e):
+        coefficients = pyro.sample(
+            f"coefficients{self.idx}",
+            pyro.distributions.LogNormal(
+                self.mu, 
+                self.coefficients_log_sigma.exp(),
+            ).to_event(1),
+        ) * self.coefficients
+
+        return linear_diffusion(g, h, e, coefficients.squeeze())
+
+    def guide(self, g, h, e):
+        coefficients = pyro.sample(
+            f"coefficients{self.idx}",
+            pyro.distributions.LogNormal(
+                torch.zeros_like(self.mu), 
+                torch.ones_like(self.coefficients_log_sigma),
+            ).to_event(1),
+        ) * self.coefficients
+
+        return linear_diffusion(g, h, e, coefficients.squeeze())
+
 
 
 class Linear(pyro.nn.PyroModule):
@@ -88,6 +124,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
         self.edge_drop = torch.nn.Dropout(edge_drop)
+        self.linear_diffusion = LinearDiffusion(6, idx=idx)
 
     def guide(self, g, h):
         g = g.local_var()
@@ -131,7 +168,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
 
         e = e / ((self.out_features / self.num_heads) ** 0.5)
-        h = linear_diffusion(g, h, e)
+        h = self.linear_diffusion(g, h, e)
 
         return h
 
@@ -163,7 +200,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
 
         e = e / ((self.out_features / self.num_heads) ** 0.5)
-        h = linear_diffusion(g, h, e)
+        h = self.linear_diffusion.guide(g, h, e)
 
         return h
 
