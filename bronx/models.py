@@ -14,7 +14,12 @@ class LinearDiffusionModel(torch.nn.Module):
         ):
         super().__init__()
         self.fc_in = torch.nn.Linear(in_features, hidden_features)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features)
+        # self.fc_out = torch.nn.Linear(hidden_features, out_features)
+        self.fc_out = torch.nn.Sequential(
+            torch.nn.Linear(hidden_features, hidden_features),
+            activation,
+            torch.nn.Linear(hidden_features, out_features),
+        )
         
         self.activation = activation
         self.gamma = gamma

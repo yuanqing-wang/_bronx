@@ -91,6 +91,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def guide(self, g, h):
         g = g.local_var()
+        h0 = h
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
         mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
@@ -129,15 +130,15 @@ class BronxLayer(pyro.nn.PyroModule):
                         ).to_event(2)
                 )
 
-
         e = e / ((self.out_features / self.num_heads) ** 0.5)
-        h = linear_diffusion(g, h, e)
+        h = linear_diffusion(g, h0, e)
 
         return h
 
 
     def forward(self, g, h):
         g = g.local_var()
+
         
         # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
