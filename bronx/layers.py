@@ -124,7 +124,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.num_heads = num_heads
         self.dropout = torch.nn.Dropout(dropout)
         self.edge_drop = torch.nn.Dropout(edge_drop)
-        self.linear_diffusion = LinearDiffusion(6, idx=idx)
+        self.linear_diffusion = LinearDiffusion(8, idx=idx)
 
     def guide(self, g, h):
         g = g.local_var()
