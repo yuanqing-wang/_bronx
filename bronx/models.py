@@ -84,11 +84,11 @@ class BronxModel(pyro.nn.PyroModule):
                 y = y[..., mask, :]
 
         if y is not None:
-            with pyro.plate("data", y.shape[0], device=h.device):
+            with pyro.plate("data", y.shape[0], device=h.device, subsample_size=100) as ind:
                 pyro.sample(
                     "y", 
-                    pyro.distributions.OneHotCategorical(h), 
-                    obs=y,
+                    pyro.distributions.OneHotCategorical(h[..., ind, :]), 
+                    obs=y[..., ind, :],
                 )
 
         return h
@@ -102,3 +102,4 @@ class BronxModel(pyro.nn.PyroModule):
             h = self.activation(h)
 
         return h
+        

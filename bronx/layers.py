@@ -77,7 +77,6 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=0.0, idx=0, num_heads=4, edge_drop=0.2,
         ):
         super().__init__()
-        # self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
 
@@ -86,8 +85,6 @@ class BronxLayer(pyro.nn.PyroModule):
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
-        self.dropout = torch.nn.Dropout(dropout)
-        self.edge_drop = torch.nn.Dropout(edge_drop)
 
     def guide(self, g, h):
         g = g.local_var()
@@ -112,13 +109,7 @@ class BronxLayer(pyro.nn.PyroModule):
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (self.num_heads * 2 * g.number_of_edges()))):
-                # e = pyro.sample(
-                #         f"e{self.idx}", 
-                #         pyro.distributions.LogNormal(
-                #         mu, log_sigma.exp(),
-                #     ).to_event(2)
-                # )
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
 
                 e = pyro.sample(
                         f"e{self.idx}",
@@ -138,18 +129,10 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         g = g.local_var()
-
         
         # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (self.num_heads * 2 * g.number_of_edges()))):
-                # e = pyro.sample(
-                #         f"e{self.idx}", 
-                #         pyro.distributions.LogNormal(
-                #             torch.zeros(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                #             torch.ones(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                #     ).to_event(2)
-                # )
+            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
 
                 e = pyro.sample(
                         f"e{self.idx}",
@@ -162,9 +145,7 @@ class BronxLayer(pyro.nn.PyroModule):
                         ).to_event(2)
                 )
 
-
         e = e / ((self.out_features / self.num_heads) ** 0.5)
         h = linear_diffusion(g, h, e)
-
         return h
 
