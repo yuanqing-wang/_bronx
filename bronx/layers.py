@@ -79,7 +79,8 @@ class BronxLayer(pyro.nn.PyroModule):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
-
+        self.fc_h_mu = torch.nn.Linear(in_features, in_features, bias=False)
+        self.fc_h_log_sigma = torch.nn.Linear(in_features, in_features, bias=False)
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -121,7 +122,6 @@ class BronxLayer(pyro.nn.PyroModule):
                         ).to_event(2)
                 )
 
-        e = e / ((self.out_features / self.num_heads) ** 0.5)
         h = linear_diffusion(g, h0, e)
 
         return h
@@ -145,7 +145,6 @@ class BronxLayer(pyro.nn.PyroModule):
                         ).to_event(2)
                 )
 
-        e = e / ((self.out_features / self.num_heads) ** 0.5)
         h = linear_diffusion(g, h, e)
         return h
 

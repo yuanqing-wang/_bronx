@@ -18,7 +18,7 @@ def experiment():
     print(name)
 
     param_space = {
-        "data": tune.choice(["cora"]),
+        "data": tune.choice(["citeseer"]),
         "hidden_features": tune.randint(1, 32),
         "embedding_features": tune.randint(1, 32),
         "num_heads": tune.randint(1, 32),

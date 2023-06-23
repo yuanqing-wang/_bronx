@@ -49,7 +49,7 @@ def run(args):
         loss=pyro.infer.TraceMeanField_ELBO(num_particles=args.num_particles, vectorize_particles=True)
     )
 
-    for idx in range(500):
+    for idx in range(5000):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
         model.eval()
@@ -64,6 +64,7 @@ def run(args):
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
             # accuracy_vl.append(accuracy)
+            print(accuracy, loss)
             scheduler.step(accuracy)
             # print(accuracy, loss)
 
@@ -74,9 +75,9 @@ def run(args):
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"]["param_groups"][0]["lr"]
 
-            if lr <= 1e-6:
-                print(accuracy)
-                return accuracy
+            # if lr <= 1e-6:
+            #     print(accuracy)
+            #     return accuracy
 
     return accuracy
 
@@ -105,8 +106,8 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=128)
-    parser.add_argument("--num_particles", type=int, default=128)
+    parser.add_argument("--num_samples", type=int, default=8)
+    parser.add_argument("--num_particles", type=int, default=8)
     parser.add_argument("--num_heads", type=int, default=8)
     args = parser.parse_args()
     print(args)
