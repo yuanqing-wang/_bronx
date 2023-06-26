@@ -22,8 +22,8 @@ def linear_diffusion(g, h, e, k:int=6):
     h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
     g.edata["e"] = e
     g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
-    g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
-    g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
+    # g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
+    # g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
     g.ndata["x"] = h
     result = h
     for i in range(1, k+1):
@@ -77,74 +77,77 @@ class BronxLayer(pyro.nn.PyroModule):
             dropout=0.0, idx=0, num_heads=4, edge_drop=0.2,
         ):
         super().__init__()
-        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_h_mu = torch.nn.Linear(in_features, in_features, bias=False)
-        self.fc_h_log_sigma = torch.nn.Linear(in_features, in_features, bias=False)
+        self.fc_mu = torch.nn.Linear(in_features, in_features, bias=False)
+        self.fc_log_sigma = torch.nn.Linear(in_features, in_features, bias=False)
+        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_q = torch.nn.Linear(in_features, out_features, bias=False)
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
 
+        torch.nn.init.normal_(self.fc_mu.weight, std=1e-3)
+        torch.nn.init.normal_(self.fc_log_sigma.weight, std=1e-3)
+
     def guide(self, g, h):
         g = g.local_var()
         h0 = h
-        h = h - h.mean(-1, keepdims=True)
-        h = torch.nn.functional.normalize(h, dim=-1)
+        pyro.module(f"fc_mu{self.idx}", self.fc_mu)
+        pyro.module(f"fc_log_sigma{self.idx}", self.fc_log_sigma)
+        pyro.module(f"fc_k{self.idx}", self.fc_k)
+        pyro.module(f"fc_q{self.idx}", self.fc_q)
+
         mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
-        mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
-        log_sigma = log_sigma.reshape(*log_sigma.shape[:-1], self.num_heads, -1)
-     
+        with pyro.plate(f"nodes{self.idx}", g.number_of_nodes()):
+            h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        mu, 
+                        log_sigma.exp(),
+                    ).to_event(1),
+            )
+        
+        k, q = self.fc_k(h), self.fc_q(h)
+        k = k.reshape(*k.shape[:-1], self.num_heads, -1)
+        q = q.reshape(*q.shape[:-1], self.num_heads, -1)
+
         parallel = h.dim() == 3
-
         if parallel:
-            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
-
-        g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
-        g.apply_edges(dgl.function.u_dot_v("mu", "mu", "mu"))
-        g.apply_edges(dgl.function.u_dot_v("log_sigma", "log_sigma", "log_sigma"))
-        mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
-
+            k, q = k.swapaxes(0, 1), q.swapaxes(0, 1)
+        g.ndata["k"], g.ndata["q"] = k, q
+        g.apply_edges(fn.u_dot_v("k", "q", "e"))
+        # g.edata["e"] = g.edata["e"] / math.sqrt(self.out_features / self.num_heads)
+        e = edge_softmax(g, g.edata["e"])
         if parallel:
-            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
-
-        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
-
-                e = pyro.sample(
-                        f"e{self.idx}",
-                        pyro.distributions.TransformedDistribution(
-                            pyro.distributions.Normal(
-                                mu, log_sigma.exp(),
-                            ),
-                            pyro.distributions.transforms.SigmoidTransform(),
-                        ).to_event(2)
-                )
-
+            e = e.swapaxes(0, 1)
         h = linear_diffusion(g, h0, e)
-
         return h
-
 
     def forward(self, g, h):
         g = g.local_var()
-        
-        # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
-        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
+        h0 = h
+        with pyro.plate(f"nodes{self.idx}", g.number_of_nodes()):
+            h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        torch.zeros_like(h), 
+                        torch.ones_like(h),
+                    ).to_event(1),
+            )
 
-                e = pyro.sample(
-                        f"e{self.idx}",
-                        pyro.distributions.TransformedDistribution(
-                            pyro.distributions.Normal(
-                                torch.zeros(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                                torch.ones(g.number_of_edges(), self.num_heads, 1, device=g.device),
-                            ),
-                            pyro.distributions.transforms.SigmoidTransform(),
-                        ).to_event(2)
-                )
+        k, q = self.fc_k(h), self.fc_q(h)
+        k = k.reshape(*k.shape[:-1], self.num_heads, -1)
+        q = q.reshape(*q.shape[:-1], self.num_heads, -1)
 
-        h = linear_diffusion(g, h, e)
+        parallel = h.dim() == 3
+        if parallel:
+            k, q = k.swapaxes(0, 1), q.swapaxes(0, 1)
+        g.ndata["k"], g.ndata["q"] = k, q
+        g.apply_edges(fn.u_dot_v("k", "q", "e"))
+        # g.edata["e"] = g.edata["e"] / math.sqrt(self.out_features / self.num_heads)
+        e = edge_softmax(g, g.edata["e"])
+        if parallel:
+            e = e.swapaxes(0, 1)
+        h = linear_diffusion(g, h0, e)
         return h
-
