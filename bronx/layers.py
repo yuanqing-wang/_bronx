@@ -74,13 +74,13 @@ class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
             in_features, out_features, activation=torch.nn.SiLU(), 
-            dropout=0.0, idx=0, num_heads=4, edge_drop=0.2,
+            dropout=0.0, idx=0, num_heads=4, edge_drop=0.2, num_factors=4,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_h_mu = torch.nn.Linear(in_features, in_features, bias=False)
-        self.fc_h_log_sigma = torch.nn.Linear(in_features, in_features, bias=False)
+        self.fc_factor = torch.nn.Linear(in_features, out_features * num_factors, bias=False)
+        self.num_factors = num_factors
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -92,22 +92,31 @@ class BronxLayer(pyro.nn.PyroModule):
         h0 = h
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
-        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
+        mu, log_sigma, factor = self.fc_mu(h), self.fc_log_sigma(h), self.fc_factor(h)
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
         log_sigma = log_sigma.reshape(*log_sigma.shape[:-1], self.num_heads, -1)
+        factor = factor.reshape(*factor.shape[:-1], self.num_heads, self.num_factors, -1)
      
         parallel = h.dim() == 3
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+            factor = factor.swapaxes(0, 1)
 
         g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
+        g.ndata["factor"] = factor
         g.apply_edges(dgl.function.u_dot_v("mu", "mu", "mu"))
         g.apply_edges(dgl.function.u_dot_v("log_sigma", "log_sigma", "log_sigma"))
+        g.apply_edges(dgl.function.u_dot_v("factor", "factor", "factor"))
+
         mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
+        factor = g.edata["factor"]
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+            factor = factor.swapaxes(0, 1)
+
+        factor = factor.swapaxes(-2, -1)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
@@ -115,8 +124,8 @@ class BronxLayer(pyro.nn.PyroModule):
                 e = pyro.sample(
                         f"e{self.idx}",
                         pyro.distributions.TransformedDistribution(
-                            pyro.distributions.Normal(
-                                mu, log_sigma.exp(),
+                            pyro.distributions.LowRankMultivariateNormal(
+                                loc=mu, cov_diag=log_sigma.exp(), cov_factor=factor,
                             ),
                             pyro.distributions.transforms.SigmoidTransform(),
                         ).to_event(2)
