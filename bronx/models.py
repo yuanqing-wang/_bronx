@@ -39,9 +39,8 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features=None,
             activation=torch.nn.SiLU(),
             depth=2,
-            dropout=0.0,
-            edge_drop=0.0,
             num_heads=4,
+            num_factors=2,
         ):
         super().__init__()
         if embedding_features is None:
@@ -61,9 +60,8 @@ class BronxModel(pyro.nn.PyroModule):
                     embedding_features, 
                     activation=activation, 
                     idx=idx,
-                    dropout=dropout,
-                    edge_drop=edge_drop,
                     num_heads=num_heads,
+                    num_factors=num_factors,
                 )
             )
 

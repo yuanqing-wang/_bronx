@@ -74,7 +74,7 @@ class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
             in_features, out_features, activation=torch.nn.SiLU(), 
-            dropout=0.0, idx=0, num_heads=4, edge_drop=0.2, num_factors=4,
+            idx=0, num_heads=4, num_factors=2,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -119,7 +119,7 @@ class BronxLayer(pyro.nn.PyroModule):
         factor = factor.swapaxes(-2, -1)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
+            with pyro.poutine.scale(None, float(0.5 * g.ndata["train_mask"].sum() / g.number_of_edges())):
 
                 e = pyro.sample(
                         f"e{self.idx}",
@@ -128,9 +128,8 @@ class BronxLayer(pyro.nn.PyroModule):
                                 loc=mu, cov_diag=log_sigma.exp(), cov_factor=factor,
                             ),
                             pyro.distributions.transforms.SigmoidTransform(),
-                        ).to_event(2)
+                        ).to_event(1)
                 )
-
         h = linear_diffusion(g, h0, e)
 
         return h
@@ -141,7 +140,7 @@ class BronxLayer(pyro.nn.PyroModule):
         
         # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(g.ndata["train_mask"].sum() / (2 * g.number_of_edges()))):
+            with pyro.poutine.scale(None, float(0.5 * g.ndata["train_mask"].sum() / g.number_of_edges())):
 
                 e = pyro.sample(
                         f"e{self.idx}",
