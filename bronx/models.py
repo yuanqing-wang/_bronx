@@ -51,6 +51,7 @@ class BronxModel(pyro.nn.PyroModule):
 
         self.activation = activation
         self.depth = depth
+        self.dropout = torch.nn.Dropout(0.5)
 
         for idx in range(depth):
             setattr(
@@ -68,6 +69,7 @@ class BronxModel(pyro.nn.PyroModule):
     def forward(self, g, h, y=None, mask=None):
         h = self.fc_in(h)
         h = self.activation(h)
+        h = self.dropout(h)
 
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)

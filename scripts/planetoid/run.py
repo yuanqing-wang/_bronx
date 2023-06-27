@@ -11,7 +11,6 @@ def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"](verbose=False)[0]
     g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
     src, dst = g.edges()
     eids = torch.where(src > dst)[0]
     g = dgl.remove_edges(g, eids)

@@ -177,7 +177,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         g = g.local_var()
-        
         # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             with pyro.poutine.scale(None, float(0.5 * g.ndata["train_mask"].sum() / g.number_of_edges())):
