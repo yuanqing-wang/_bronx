@@ -39,18 +39,19 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features=None,
             activation=torch.nn.SiLU(),
             depth=2,
-            dropout=0.0,
-            edge_drop=0.0,
             num_heads=4,
+            num_factors=2,
         ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
+        # self.fc_in = Linear(in_features, hidden_features)
         self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
 
         self.activation = activation
         self.depth = depth
+        self.dropout = torch.nn.Dropout(0.5)
 
         for idx in range(depth):
             setattr(
@@ -61,8 +62,6 @@ class BronxModel(pyro.nn.PyroModule):
                     embedding_features, 
                     activation=activation, 
                     idx=idx,
-                    dropout=dropout,
-                    edge_drop=edge_drop,
                     num_heads=num_heads,
                 )
             )
@@ -70,6 +69,7 @@ class BronxModel(pyro.nn.PyroModule):
     def forward(self, g, h, y=None, mask=None):
         h = self.fc_in(h)
         h = self.activation(h)
+        h = self.dropout(h)
 
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)

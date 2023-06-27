@@ -11,7 +11,6 @@ def run(args):
     from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
     g = locals()[f"{args.data.capitalize()}GraphDataset"](verbose=False)[0]
     g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
     src, dst = g.edges()
     eids = torch.where(src > dst)[0]
     g = dgl.remove_edges(g, eids)
@@ -26,10 +25,10 @@ def run(args):
         num_heads=args.num_heads,
     )
 
-    # print(model)
+    # torch.nn.init.xavier_uniform_(model.fc_in.weight, gain=0.1)
+    # torch.nn.init.xavier_uniform_(model.fc_out.weight, gain=0.1)
 
     if torch.cuda.is_available():
-        # a = a.cuda()
         model = model.cuda()
         g = g.to("cuda:0")
 
@@ -49,7 +48,7 @@ def run(args):
         loss=pyro.infer.TraceMeanField_ELBO(num_particles=args.num_particles, vectorize_particles=True)
     )
 
-    for idx in range(5000):
+    for idx in range(500):
         model.train()
         loss = svi.step(g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"])
         model.eval()
@@ -63,10 +62,9 @@ def run(args):
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])["_RETURN"].mean(0)
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
+            print(accuracy)
             # accuracy_vl.append(accuracy)
-            print(accuracy, loss)
             scheduler.step(accuracy)
-            # print(accuracy, loss)
 
             # y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])["_RETURN"].mean(0)
             # y = g.ndata["label"][g.ndata["test_mask"]]
@@ -75,9 +73,9 @@ def run(args):
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"]["param_groups"][0]["lr"]
 
-            # if lr <= 1e-6:
-            #     print(accuracy)
-            #     return accuracy
+            if lr <= 1e-6:
+                print(accuracy)
+                return accuracy
 
     return accuracy
 
@@ -106,9 +104,9 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=8)
-    parser.add_argument("--num_particles", type=int, default=8)
-    parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--num_samples", type=int, default=64)
+    parser.add_argument("--num_particles", type=int, default=64)
+    parser.add_argument("--num_heads", type=int, default=32)
     args = parser.parse_args()
     print(args)
     run(args)

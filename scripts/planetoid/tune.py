@@ -18,17 +18,18 @@ def experiment():
     print(name)
 
     param_space = {
-        "data": tune.choice(["citeseer"]),
-        "hidden_features": tune.randint(1, 32),
-        "embedding_features": tune.randint(1, 32),
-        "num_heads": tune.randint(1, 32),
-        "depth": tune.randint(1, 8),
-        "learning_rate": tune.loguniform(1e-4, 1e-2),
+        "data": tune.choice(["cora"]),
+        "hidden_features": tune.randint(8, 16),
+        "embedding_features": tune.randint(8, 16),
+        "num_heads": tune.randint(8, 16),
+        "depth": tune.randint(1, 6),
+        "learning_rate": tune.loguniform(1e-3, 1e-2),
         "weight_decay": tune.loguniform(1e-6, 1e-3),
         "patience": tune.randint(5, 10),
         "factor": tune.uniform(0.5, 0.8),
         "num_samples": tune.choice([32]),
         "num_particles": tune.choice([32]),
+        "num_factors": tune.randint(1, 4),
     }
     
     tune_config = tune.TuneConfig(
@@ -39,7 +40,8 @@ def experiment():
     )
 
     run_config = air.RunConfig(
-        verbose=0, name=name,
+        # verbose=0, 
+        name=name,
     )
 
     tuner = tune.Tuner(
