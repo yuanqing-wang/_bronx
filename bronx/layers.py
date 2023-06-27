@@ -37,7 +37,7 @@ def linear_diffusion(g, h, e, k:int=6):
 
 
 class Linear(pyro.nn.PyroModule):
-    def __init__(self, in_features, out_features, idx):
+    def __init__(self, in_features, out_features, idx=0):
         super().__init__()
         self.w_mu = torch.nn.Parameter(torch.randn(in_features, out_features))
         self.w_log_sigma = torch.nn.Parameter(1e-3 * torch.randn(in_features, out_features))
@@ -45,8 +45,7 @@ class Linear(pyro.nn.PyroModule):
         self.in_features = in_features
         self.out_features = out_features
 
-
-    def guide(self, x):
+    def forward(self, x):
         with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
             w = pyro.sample(
                     f"w{self.idx}",
@@ -57,7 +56,7 @@ class Linear(pyro.nn.PyroModule):
             )
         return x @ w
 
-    def forward(self, x):
+    def guide(self, x):
         with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
             w = pyro.sample(
                     f"w{self.idx}",
@@ -68,19 +67,69 @@ class Linear(pyro.nn.PyroModule):
             )
         return x @ w
 
+# class Linear(pyro.nn.PyroModule):
+#     def __init__(self, in_features, out_features, idx=0):
+#         super().__init__()
+#         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
+#         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+#         self.idx = idx
+#         self.in_features = in_features
+#         self.out_features = out_features
+
+#     def guide(self, x):
+#         with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
+#             w = pyro.sample(
+#                     f"w{self.idx}",
+#                     pyro.distributions.Normal(
+#                         torch.zeros_like(self.w_mu), 
+#                         torch.ones_like(self.w_log_sigma.exp()),
+#                     ).to_event(1),
+#             )
+#         return x @ w
+
+#     def forward(self, x):
+#         with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
+#             w = pyro.sample(
+#                     f"w{self.idx}",
+#                     pyro.distributions.Normal(
+#                         self.w_mu, 
+#                         self.w_log_sigma.exp(),
+#                     ).to_event(1),
+#             )
+#         return x @ w
+
+
+# class InLayer(pyro.nn.PyroModule):
+#     def __init__(self, in_features, out_features, idx):
+#         super().__init__()
+#         self.w_mu = torch.nn.Parameter(torch.randn(in_features, out_features))
+#         self.w_log_sigma = torch.nn.Parameter(1e-3 * torch.randn(in_features, out_features))
+#         self.idx = idx
+#         self.in_features = in_features
+#         self.out_features = out_features
+
+#     def guide(self, x):
+#         with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
+#             w = pyro.sample(
+#                     f"w{self.idx}",
+#                     pyro.distributions.Normal(
+#                         torch.zeros_like(self.w_mu), 
+#                         torch.ones_like(self.w_log_sigma.exp()),
+#                     ).to_event(1),
+#             )
+#         return x @ w
+
 
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
             in_features, out_features, activation=torch.nn.SiLU(), 
-            idx=0, num_heads=4, num_factors=2,
+            idx=0, num_heads=4,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_factor = torch.nn.Linear(in_features, out_features * num_factors, bias=False)
-        self.num_factors = num_factors
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -92,31 +141,22 @@ class BronxLayer(pyro.nn.PyroModule):
         h0 = h
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
-        mu, log_sigma, factor = self.fc_mu(h), self.fc_log_sigma(h), self.fc_factor(h)
+        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
         log_sigma = log_sigma.reshape(*log_sigma.shape[:-1], self.num_heads, -1)
-        factor = factor.reshape(*factor.shape[:-1], self.num_heads, self.num_factors, -1)
      
         parallel = h.dim() == 3
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
-            factor = factor.swapaxes(0, 1)
 
         g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
-        g.ndata["factor"] = factor
         g.apply_edges(dgl.function.u_dot_v("mu", "mu", "mu"))
         g.apply_edges(dgl.function.u_dot_v("log_sigma", "log_sigma", "log_sigma"))
-        g.apply_edges(dgl.function.u_dot_v("factor", "factor", "factor"))
-
         mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
-        factor = g.edata["factor"]
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
-            factor = factor.swapaxes(0, 1)
-
-        factor = factor.swapaxes(-2, -1)
 
         with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
             with pyro.poutine.scale(None, float(0.5 * g.ndata["train_mask"].sum() / g.number_of_edges())):
@@ -124,11 +164,11 @@ class BronxLayer(pyro.nn.PyroModule):
                 e = pyro.sample(
                         f"e{self.idx}",
                         pyro.distributions.TransformedDistribution(
-                            pyro.distributions.LowRankMultivariateNormal(
-                                loc=mu, cov_diag=log_sigma.exp(), cov_factor=factor,
+                            pyro.distributions.Normal(
+                                mu, log_sigma.exp(),
                             ),
                             pyro.distributions.transforms.SigmoidTransform(),
-                        ).to_event(1)
+                        ).to_event(2)
                 )
         h = linear_diffusion(g, h0, e)
 

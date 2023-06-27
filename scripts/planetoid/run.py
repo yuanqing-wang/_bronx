@@ -24,8 +24,10 @@ def run(args):
         embedding_features=args.embedding_features,
         depth=args.depth,
         num_heads=args.num_heads,
-        num_factors=args.num_factors,
     )
+
+    # torch.nn.init.xavier_uniform_(model.fc_in.weight, gain=0.1)
+    # torch.nn.init.xavier_uniform_(model.fc_out.weight, gain=0.1)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -41,6 +43,8 @@ def run(args):
             "mode": "max",
         }
     )
+
+    # scheduler = pyro.optim.AdagradRMSProp({})
 
     svi = pyro.infer.SVI(
         model, model.guide, scheduler, 
@@ -61,6 +65,7 @@ def run(args):
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])["_RETURN"].mean(0)
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
+            # print(accuracy)
             # accuracy_vl.append(accuracy)
             scheduler.step(accuracy)
 
@@ -105,7 +110,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_samples", type=int, default=64)
     parser.add_argument("--num_particles", type=int, default=64)
     parser.add_argument("--num_heads", type=int, default=8)
-    parser.add_argument("--num_factors", type=int, default=2)
     args = parser.parse_args()
     print(args)
     run(args)
