@@ -44,8 +44,6 @@ def run(args):
         }
     )
 
-    # scheduler = pyro.optim.AdagradRMSProp({})
-
     svi = pyro.infer.SVI(
         model, model.guide, scheduler, 
         loss=pyro.infer.TraceMeanField_ELBO(num_particles=args.num_particles, vectorize_particles=True)
@@ -65,7 +63,7 @@ def run(args):
             y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])["_RETURN"].mean(0)
             y = g.ndata["label"][g.ndata["val_mask"]]
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(y_hat)
-            # print(accuracy)
+            print(accuracy)
             # accuracy_vl.append(accuracy)
             scheduler.step(accuracy)
 
@@ -109,7 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--num_samples", type=int, default=64)
     parser.add_argument("--num_particles", type=int, default=64)
-    parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--num_heads", type=int, default=32)
     args = parser.parse_args()
     print(args)
     run(args)
