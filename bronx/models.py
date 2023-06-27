@@ -87,3 +87,11 @@ class NodeClassificationBronxModel(BronxModel):
 class GraphRegressionBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def forward(self, g, h, y=None):
+        g = g.local_var()
+        h = super().forward(g, h)
+        g.ndata["h"] = h
+        h = dgl.sum_nodes(g, "h")
+        
+        

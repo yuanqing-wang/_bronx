@@ -102,6 +102,7 @@ class BronxLayer(pyro.nn.PyroModule):
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),
                 )
+
         h = linear_diffusion(g, h0, e)
         return h
 
