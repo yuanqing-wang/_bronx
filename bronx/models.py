@@ -1,37 +1,7 @@
-from audioop import bias
-from collections import OrderedDict
 import torch
 import pyro
 from pyro import poutine
-from .layers import BronxLayer, Linear
-
-import functools
-
-class LinearDiffusionModel(torch.nn.Module):
-    def __init__(
-            self, in_features, hidden_features, out_features,
-            activation=torch.nn.SiLU(), gamma=0.0,
-        ):
-        super().__init__()
-        self.fc_in = torch.nn.Linear(in_features, hidden_features)
-        # self.fc_out = torch.nn.Linear(hidden_features, out_features)
-        self.fc_out = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features, hidden_features),
-            activation,
-            torch.nn.Linear(hidden_features, out_features),
-        )
-        
-        self.activation = activation
-        self.gamma = gamma
-        self.linear_diffusion = LinearDiffusion()
-
-
-    def forward(self, g, h):
-        h = self.fc_in(h)
-        h = self.activation(h)
-        h = self.linear_diffusion(g, h, gamma=self.gamma)
-        h = self.fc_out(h)
-        return h
+from .layers import BronxLayer
     
 class BronxModel(pyro.nn.PyroModule):
     def __init__(
