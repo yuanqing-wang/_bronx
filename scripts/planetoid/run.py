@@ -4,7 +4,7 @@ import pyro
 from pyro import poutine
 import dgl
 dgl.use_libxsmm(False)
-from bronx.models import LinearDiffusionModel, BronxModel
+from bronx.models import NodeClassificationBronxModel
 
 def run(args):
     pyro.clear_param_store()
@@ -17,7 +17,7 @@ def run(args):
     g = dgl.remove_edges(g, eids)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
-    model = BronxModel(
+    model = NodeClassificationBronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
