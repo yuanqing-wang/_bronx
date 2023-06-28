@@ -12,7 +12,8 @@ def objective(args):
     )
     args["hidden_features"] = args["hidden_features"] * args["num_heads"]
     args = SimpleNamespace(**args)
-    session.report({"accuracy": run(args)})
+    accuracy, accuracy_te = run(args)
+    session.report({"accuracy": accuracy, "accuracy_te": accuracy_te})
 
 def experiment(args):
     ray.init(num_gpus=1, num_cpus=1)
@@ -21,16 +22,17 @@ def experiment(args):
 
     param_space = {
         "data": tune.choice([args.data]),
-        "hidden_features": tune.randint(8, 16),
-        "embedding_features": tune.randint(8, 16),
-        "num_heads": tune.randint(4, 16),
-        "depth": tune.randint(1, 6),
-        "learning_rate": tune.loguniform(1e-4, 5e-2),
-        "weight_decay": tune.loguniform(1e-6, 1e-2),
+        "hidden_features": tune.randint(8, 32),
+        "embedding_features": tune.randint(8, 32),
+        "num_heads": tune.randint(4, 32),
+        "depth": tune.randint(1, 8),
+        "learning_rate": tune.loguniform(1e-3, 5e-2),
+        "weight_decay": tune.loguniform(1e-4, 1e-2),
         "patience": tune.randint(5, 10),
         "factor": tune.uniform(0.5, 1.0),
-        "num_samples": tune.choice([16]),
-        "num_particles": tune.choice([16]),
+        "num_samples": tune.choice([8]),
+        "num_particles": tune.choice([8]),
+        "sigma_factor": tune.uniform(1.0, 10.0),
     }
 
     tune_config = tune.TuneConfig(
@@ -41,8 +43,9 @@ def experiment(args):
     )
 
     run_config = air.RunConfig(
-        verbose=0,
+        # verbose=0,
         name=name,
+        local_dir=args.data,
     )
 
     tuner = tune.Tuner(

@@ -14,13 +14,20 @@ class BronxModel(pyro.nn.PyroModule):
         activation=torch.nn.SiLU(),
         depth=2,
         num_heads=4,
+        sigma_factor=1.0,
     ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(
-            hidden_features, out_features, bias=False
+        # self.fc_out = torch.nn.Linear(
+        #     hidden_features, out_features, bias=False
+        # )
+
+        self.fc_out = torch.nn.Sequential(
+            torch.nn.Linear(hidden_features, hidden_features, bias=False),
+            torch.nn.SiLU(),
+            torch.nn.Linear(hidden_features, out_features, bias=False),
         )
 
         self.activation = activation
@@ -36,6 +43,7 @@ class BronxModel(pyro.nn.PyroModule):
                     activation=activation,
                     idx=idx,
                     num_heads=num_heads,
+                    sigma_factor=sigma_factor,
                 ),
             )
 
@@ -90,8 +98,17 @@ class GraphRegressionBronxModel(BronxModel):
 
     def forward(self, g, h, y=None):
         g = g.local_var()
-        h = super().forward(g, h)
+
+        h = self.fc_in(h)
+        h = self.activation(h)
+
+        for idx in range(self.depth):
+            h = getattr(self, f"layer{idx}")(g, h)
+            h = self.activation(h)
+
         g.ndata["h"] = h
         h = dgl.sum_nodes(g, "h")
-        
+        h = self.fc_out(h)
+        return h
+
         

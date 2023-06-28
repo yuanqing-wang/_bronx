@@ -45,6 +45,7 @@ class BronxLayer(pyro.nn.PyroModule):
         activation=torch.nn.SiLU(),
         idx=0,
         num_heads=4,
+        sigma_factor=1.0,
     ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -56,6 +57,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
+        self.sigma_factor = sigma_factor
 
     def guide(self, g, h):
         g = g.local_var()
@@ -97,7 +99,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     pyro.distributions.TransformedDistribution(
                         pyro.distributions.Normal(
                             mu,
-                            log_sigma.exp(),
+                            self.sigma_factor * log_sigma.exp(),
                         ),
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),
@@ -128,7 +130,7 @@ class BronxLayer(pyro.nn.PyroModule):
                                 1,
                                 device=g.device,
                             ),
-                            torch.ones(
+                            self.sigma_factor * torch.ones(
                                 g.number_of_edges(),
                                 self.num_heads,
                                 1,

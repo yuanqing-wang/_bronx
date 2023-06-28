@@ -11,6 +11,7 @@ from bronx.models import NodeClassificationBronxModel
 
 def run(args):
     pyro.clear_param_store()
+    torch.cuda.empty_cache()
     from dgl.data import (
         CoraGraphDataset,
         CiteseerGraphDataset,
@@ -61,6 +62,7 @@ def run(args):
         embedding_features=args.embedding_features,
         depth=args.depth,
         num_heads=args.num_heads,
+        sigma_factor=args.sigma_factor,
     )
 
     if torch.cuda.is_available():
@@ -118,15 +120,23 @@ def run(args):
             )
             
             scheduler.step(accuracy)
-            print(accuracy)
+
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
                 "param_groups"
             ][0]["lr"]
 
             if lr <= 1e-6:
-                print(accuracy, flush=True)
-                return accuracy
+                y_te = g.ndata["label"][g.ndata["test_mask"]]
+                y_hat_te = predictive(
+                    g, g.ndata["feat"], mask=g.ndata["test_mask"]
+                )["_RETURN"].mean(0)
+                accuracy_te = float(
+                    (y_hat_te.argmax(-1) == y_te.argmax(-1)).sum()) / len(
+                        y_hat_te
+                )
+                print(accuracy, accuracy_te, flush=True)
+                return accuracy, accuracy_te
 
     return accuracy
 
@@ -157,9 +167,10 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=16)
-    parser.add_argument("--num_particles", type=int, default=16)
+    parser.add_argument("--num_samples", type=int, default=8)
+    parser.add_argument("--num_particles", type=int, default=8)
     parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--sigma_factor", type=float, default=10.0)
     args = parser.parse_args()
     print(args)
     run(args)

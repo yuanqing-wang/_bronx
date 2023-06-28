@@ -3,60 +3,26 @@ import torch
 import pyro
 from pyro import poutine
 import dgl
-from ogb.nodeproppred import DglNodePropPredDataset
-
-
 dgl.use_libxsmm(False)
-from bronx.models import NodeClassificationBronxModel
+from bronx.models import GraphRegressionBronxModel
 
 def run(args):
     pyro.clear_param_store()
-    from dgl.data import (
-        CoraGraphDataset,
-        CiteseerGraphDataset,
-        PubmedGraphDataset,
-        CoauthorCSDataset,
-        CoauthorPhysicsDataset,
-        AmazonCoBuyComputerDataset,
-        AmazonCoBuyPhotoDataset,
-    )
+    from dgl.data import ZINCDataset
+    from dgl.dataloading import GraphDataLoader
+    data_train = ZINCDataset(mode="train")
+    data_val = ZINCDataset(mode="valid")
+    data_test = ZINCDataset(mode="test")
 
-    g = locals()[args.data](verbose=False)[0]
-    g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
-    src, dst = g.edges()
-    eids = torch.where(src > dst)[0]
-    g = dgl.remove_edges(g, eids)
-    g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
+    data_train = GraphDataLoader(data_train, batch_size=args.batch_size, shuffle=True)
+    data_val = GraphDataLoader(data_val, batch_size=args.batch_size, shuffle=False)
+    data_test = GraphDataLoader(data_test, batch_size=args.batch_size, shuffle=False)
 
-    if "train_mask" not in g.ndata:
-        g.ndata["train_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
-        g.ndata["val_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
-        g.ndata["test_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
+    g, y = next(iter(data_train))
 
-        train_idxs = torch.tensor([], dtype=torch.int32)
-        val_idxs = torch.tensor([], dtype=torch.int32)
-        test_idxs = torch.tensor([], dtype=torch.int32)
-
-        n_classes = g.ndata["label"].shape[-1]
-        for idx_class in range(n_classes):
-            idxs = torch.where(g.ndata["label"][:, idx_class] == 1)[0]
-            assert len(idxs) > 50
-            idxs = idxs[torch.randperm(len(idxs))]
-            _train_idxs = idxs[:20]
-            _val_idxs = idxs[20:50]
-            _test_idxs = idxs[50:]
-            train_idxs = torch.cat([train_idxs, _train_idxs])
-            val_idxs = torch.cat([val_idxs, _val_idxs])
-            test_idxs = torch.cat([test_idxs, _test_idxs])
-
-        g.ndata["train_mask"][train_idxs] = True
-        g.ndata["val_mask"][val_idxs] = True
-        g.ndata["test_mask"][test_idxs] = True
-
-    model = NodeClassificationBronxModel(
+    model = GraphRegressionBronxModel(
         in_features=g.ndata["feat"].shape[-1],
-        out_features=g.ndata["label"].shape[-1],
+        out_features=1,
         hidden_features=args.hidden_features,
         embedding_features=args.embedding_features,
         depth=args.depth,
@@ -64,9 +30,7 @@ def run(args):
     )
 
     if torch.cuda.is_available():
-        # a = a.cuda()
-        model = model.cuda()
-        g = g.to("cuda:0")
+        model = model.to("cuda:0")
 
     optimizer = (
         torch.optim.Adam
@@ -94,56 +58,15 @@ def run(args):
     )
 
     for idx in range(5000):
-        model.train()
-        loss = svi.step(
-            g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"]
-        )
-        model.eval()
-
-        with torch.no_grad():
-            predictive = pyro.infer.Predictive(
-                model,
-                guide=model.guide,
-                num_samples=args.num_samples,
-                parallel=True,
-                return_sites=["_RETURN"],
+        for g, y in data_train:
+            if torch.cuda.is_available():
+                g = g.to("cuda:0")
+                y = y.to("cuda:0")
+            model.train()
+            loss = svi.step(
+                g, g.ndata["feat"], y,
             )
-
-            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-                "_RETURN"
-            ].mean(0)
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-                y_hat
-            )
-            
-            scheduler.step(accuracy)
-            print(accuracy)
-
-            lr = next(iter(scheduler.get_state().values()))["optimizer"][
-                "param_groups"
-            ][0]["lr"]
-
-            if lr <= 1e-6:
-                print(accuracy, flush=True)
-                return accuracy
-
-    return accuracy
-
-    # accuracy_vl = np.array(accuracy_vl)
-    # accuracy_te = np.array(accuracy_te)
-
-    # print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
-
-    # import pandas as pd
-    # df = vars(args)
-    # df["accuracy_vl"] = accuracy_vl.max()
-    # df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
-    # df = pd.DataFrame.from_dict([df])
-    # import os
-    # header = not os.path.exists("performance.csv")
-    # df.to_csv("performance.csv", mode="a", header=header)
-
+            model.eval()
 
 if __name__ == "__main__":
     import argparse
@@ -160,6 +83,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_samples", type=int, default=16)
     parser.add_argument("--num_particles", type=int, default=16)
     parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=32)
     args = parser.parse_args()
     print(args)
     run(args)

@@ -5,5 +5,5 @@
 #BSUB -W 1:00
 #BSUB -n 1
 
-python tune.py
+python tune.py --dataset "CoauthorCSDataset"
 
