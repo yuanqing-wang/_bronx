@@ -1,4 +1,5 @@
 import torch
+import dgl
 import pyro
 from pyro import poutine
 from .layers import BronxLayer
@@ -15,25 +16,20 @@ class BronxModel(pyro.nn.PyroModule):
         depth=2,
         num_heads=4,
         sigma_factor=1.0,
+        kl_scale=1.0,
     ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        # self.fc_out = torch.nn.Linear(
-        #     hidden_features, out_features, bias=False
-        # )
-
-        self.fc_out = torch.nn.Sequential(
-            torch.nn.Linear(hidden_features, hidden_features, bias=False),
-            torch.nn.SiLU(),
-            torch.nn.Linear(hidden_features, out_features, bias=False),
+        self.fc_out = torch.nn.Linear(
+            hidden_features, out_features, bias=False
         )
-
         self.activation = activation
         self.depth = depth
 
         for idx in range(depth):
+            projection = idx == 0
             setattr(
                 self,
                 f"layer{idx}",
@@ -44,6 +40,8 @@ class BronxModel(pyro.nn.PyroModule):
                     idx=idx,
                     num_heads=num_heads,
                     sigma_factor=sigma_factor,
+                    kl_scale=kl_scale,
+                    projection=projection
                 ),
             )
 
@@ -95,6 +93,13 @@ class NodeClassificationBronxModel(BronxModel):
 class GraphRegressionBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fc_mu = torch.nn.Linear(
+            kwargs["hidden_features"], kwargs["out_features"], bias=False,
+        )
+        self.fc_log_sigma = torch.nn.Linear(
+            kwargs["hidden_features"], kwargs["out_features"], bias=False,
+        )
+
 
     def forward(self, g, h, y=None):
         g = g.local_var()
@@ -106,9 +111,26 @@ class GraphRegressionBronxModel(BronxModel):
             h = getattr(self, f"layer{idx}")(g, h)
             h = self.activation(h)
 
+        parallel = h.dim() == 3
+        if parallel:
+            h = h.swapaxes(0, 1)
+            
         g.ndata["h"] = h
         h = dgl.sum_nodes(g, "h")
-        h = self.fc_out(h)
+
+        if parallel:
+            h = h.swapaxes(0, 1)
+
+        if y is not None:
+            with pyro.plate("data", y.shape[0], device=h.device):
+                pyro.sample(
+                    "y",
+                    pyro.distributions.Normal(
+                        self.fc_mu(h), 
+                        self.fc_log_sigma(h).exp()
+                    ).to_event(1),
+                    obs=y,
+                )
         return h
 
         

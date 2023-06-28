@@ -46,6 +46,8 @@ class BronxLayer(pyro.nn.PyroModule):
         idx=0,
         num_heads=4,
         sigma_factor=1.0,
+        kl_scale=1.0,
+        projection=False,
     ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -58,6 +60,11 @@ class BronxLayer(pyro.nn.PyroModule):
         self.out_features = out_features
         self.num_heads = num_heads
         self.sigma_factor = sigma_factor
+        self.kl_scale = kl_scale
+
+        if projection:
+            self.fc = torch.nn.Linear(in_features, in_features, bias=False)
+        self.projection = projection
 
     def guide(self, g, h):
         g = g.local_var()
@@ -88,12 +95,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
-            with pyro.poutine.scale(
-                None,
-                float(
-                    0.5 * g.ndata["train_mask"].sum() / g.number_of_edges()
-                ),
-            ):
+            with pyro.poutine.scale(None, self.kl_scale):
                 e = pyro.sample(
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
@@ -106,6 +108,8 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = linear_diffusion(g, h0, e)
+        if self.projection:
+            h = self.fc(h)
         return h
 
     def forward(self, g, h):
@@ -114,12 +118,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
-            with pyro.poutine.scale(
-                None,
-                float(
-                    0.5 * g.ndata["train_mask"].sum() / g.number_of_edges()
-                ),
-            ):
+            with pyro.poutine.scale(None, self.kl_scale):
                 e = pyro.sample(
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
@@ -142,4 +141,6 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = linear_diffusion(g, h, e)
+        if self.projection:
+            h = self.fc(h)
         return h

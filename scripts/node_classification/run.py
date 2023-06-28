@@ -4,8 +4,6 @@ import pyro
 from pyro import poutine
 import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
-
-
 dgl.use_libxsmm(False)
 from bronx.models import NodeClassificationBronxModel
 
@@ -63,6 +61,7 @@ def run(args):
         depth=args.depth,
         num_heads=args.num_heads,
         sigma_factor=args.sigma_factor,
+        kl_scale=float(0.5 * g.ndata["train_mask"].sum () / g.number_of_nodes()),
     )
 
     if torch.cuda.is_available():
@@ -118,9 +117,8 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
-            
+            print(accuracy, flush=True)
             scheduler.step(accuracy)
-
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
                 "param_groups"
@@ -140,21 +138,6 @@ def run(args):
 
     return accuracy
 
-    # accuracy_vl = np.array(accuracy_vl)
-    # accuracy_te = np.array(accuracy_te)
-
-    # print(accuracy_vl.max(), accuracy_te[accuracy_vl.argmax()])
-
-    # import pandas as pd
-    # df = vars(args)
-    # df["accuracy_vl"] = accuracy_vl.max()
-    # df["accuracy_te"] = accuracy_te[accuracy_vl.argmax()]
-    # df = pd.DataFrame.from_dict([df])
-    # import os
-    # header = not os.path.exists("performance.csv")
-    # df.to_csv("performance.csv", mode="a", header=header)
-
-
 if __name__ == "__main__":
     import argparse
 
@@ -164,13 +147,13 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=8)
-    parser.add_argument("--num_particles", type=int, default=8)
+    parser.add_argument("--num_samples", type=int, default=32)
+    parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=8)
-    parser.add_argument("--sigma_factor", type=float, default=10.0)
+    parser.add_argument("--sigma_factor", type=float, default=5.0)
     args = parser.parse_args()
     print(args)
     run(args)

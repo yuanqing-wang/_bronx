@@ -6,11 +6,15 @@ from ray import tune, air, train
 from ray.tune.trainable import session
 from ray.tune.search.optuna import OptunaSearch
 
-def objective(args):
+def multiply_by_heads(args):
     args["embedding_features"] = (
         args["embedding_features"] * args["num_heads"]
     )
     args["hidden_features"] = args["hidden_features"] * args["num_heads"]
+    return args
+
+def objective(args):
+    args = multiply_by_heads(args)
     args = SimpleNamespace(**args)
     accuracy, accuracy_te = run(args)
     session.report({"accuracy": accuracy, "accuracy_te": accuracy_te})

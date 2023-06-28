@@ -13,7 +13,7 @@ def run(args):
     data_train = ZINCDataset(mode="train")
     data_val = ZINCDataset(mode="valid")
     data_test = ZINCDataset(mode="test")
-
+    n_types = data_train.num_atom_types
     data_train = GraphDataLoader(data_train, batch_size=args.batch_size, shuffle=True)
     data_val = GraphDataLoader(data_val, batch_size=args.batch_size, shuffle=False)
     data_test = GraphDataLoader(data_test, batch_size=args.batch_size, shuffle=False)
@@ -21,7 +21,7 @@ def run(args):
     g, y = next(iter(data_train))
 
     model = GraphRegressionBronxModel(
-        in_features=g.ndata["feat"].shape[-1],
+        in_features=n_types,
         out_features=1,
         hidden_features=args.hidden_features,
         embedding_features=args.embedding_features,
@@ -64,8 +64,11 @@ def run(args):
                 y = y.to("cuda:0")
             model.train()
             loss = svi.step(
-                g, g.ndata["feat"], y,
+                g, 
+                torch.nn.functional.one_hot(g.ndata["feat"], n_types).float(), 
+                y,
             )
+            print(loss)
             model.eval()
 
 if __name__ == "__main__":
