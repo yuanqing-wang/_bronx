@@ -29,7 +29,6 @@ class BronxModel(pyro.nn.PyroModule):
         self.depth = depth
 
         for idx in range(depth):
-            projection = idx == 0
             setattr(
                 self,
                 f"layer{idx}",
@@ -41,7 +40,7 @@ class BronxModel(pyro.nn.PyroModule):
                     num_heads=num_heads,
                     sigma_factor=sigma_factor,
                     kl_scale=kl_scale,
-                    projection=projection
+                    t=float(1/depth),
                 ),
             )
 
@@ -61,8 +60,8 @@ class BronxModel(pyro.nn.PyroModule):
 
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
-            h = self.activation(h)
-
+        
+        h = self.activation(h)
         h = self.fc_out(h)
         return h
 

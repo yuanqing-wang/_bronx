@@ -11,8 +11,7 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-
-def linear_diffusion(g, h, e, k: int = 6):
+def linear_diffusion(g, h, e, k=6, t=1):
     g = g.local_var()
     parallel = e.dim() == 4
     if parallel:
@@ -27,15 +26,14 @@ def linear_diffusion(g, h, e, k: int = 6):
     g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
     g.ndata["x"] = h
     result = h
+    g.edata["e"] = t * g.edata["e"]
     for i in range(1, k + 1):
         g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
         result = result + g.ndata["x"] / math.factorial(i)
     if parallel:
         result = result.swapaxes(0, 1)
-
     result = result.flatten(-2, -1)
     return result
-
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
@@ -48,6 +46,7 @@ class BronxLayer(pyro.nn.PyroModule):
         sigma_factor=1.0,
         kl_scale=1.0,
         projection=False,
+        t=1.0,
     ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -61,10 +60,13 @@ class BronxLayer(pyro.nn.PyroModule):
         self.num_heads = num_heads
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
+        self.t = t
 
         if projection:
             self.fc = torch.nn.Linear(in_features, in_features, bias=False)
         self.projection = projection
+
+        self.norm = torch.nn.LayerNorm(in_features)
 
     def guide(self, g, h):
         g = g.local_var()
@@ -107,7 +109,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = linear_diffusion(g, h0, e)
+        h = linear_diffusion(g, h0, e, t=self.t)
         if self.projection:
             h = self.fc(h)
         return h
@@ -140,7 +142,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = linear_diffusion(g, h, e)
+        h = linear_diffusion(g, h, e, t=self.t)
         if self.projection:
             h = self.fc(h)
         return h
