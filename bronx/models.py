@@ -17,6 +17,7 @@ class BronxModel(pyro.nn.PyroModule):
         num_heads=4,
         sigma_factor=1.0,
         kl_scale=1.0,
+        t=1.0,
     ):
         super().__init__()
         if embedding_features is None:
@@ -40,7 +41,7 @@ class BronxModel(pyro.nn.PyroModule):
                     num_heads=num_heads,
                     sigma_factor=sigma_factor,
                     kl_scale=kl_scale,
-                    t=float(1/depth),
+                    t=t,
                 ),
             )
 

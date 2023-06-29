@@ -62,6 +62,7 @@ def run(args):
         num_heads=args.num_heads,
         sigma_factor=args.sigma_factor,
         kl_scale=float(0.5 * g.ndata["train_mask"].sum () / g.number_of_nodes()),
+        t=args.t,
     )
 
     if torch.cuda.is_available():
@@ -133,27 +134,26 @@ def run(args):
                     (y_hat_te.argmax(-1) == y_te.argmax(-1)).sum()) / len(
                         y_hat_te
                 )
-                print(accuracy, accuracy_te, flush=True)
                 return accuracy, accuracy_te
 
     return accuracy
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=2)
+    parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--num_samples", type=int, default=32)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=8)
-    parser.add_argument("--sigma_factor", type=float, default=5.0)
+    parser.add_argument("--sigma_factor", type=float, default=1.0)
+    parser.add_argument("--t", type=float, default=1.0)
     args = parser.parse_args()
     print(args)
     run(args)

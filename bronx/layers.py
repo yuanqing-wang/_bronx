@@ -38,7 +38,7 @@ def linear_diffusion(g, h, e, k=6, t=1):
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
         self,
-        in_features,
+        in_features, 
         out_features,
         activation=torch.nn.SiLU(),
         idx=0,
@@ -53,6 +53,8 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_log_sigma = torch.nn.Linear(
             in_features, out_features, bias=False
         )
+
+        self.gamma = pyro.nn.PyroParam(torch.zeros(in_features))
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -65,8 +67,6 @@ class BronxLayer(pyro.nn.PyroModule):
         if projection:
             self.fc = torch.nn.Linear(in_features, in_features, bias=False)
         self.projection = projection
-
-        self.norm = torch.nn.LayerNorm(in_features)
 
     def guide(self, g, h):
         g = g.local_var()
@@ -110,6 +110,7 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = linear_diffusion(g, h0, e, t=self.t)
+        h = h * self.gamma.exp()
         if self.projection:
             h = self.fc(h)
         return h
@@ -143,6 +144,7 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = linear_diffusion(g, h, e, t=self.t)
+        h = h * self.gamma.exp()
         if self.projection:
             h = self.fc(h)
         return h
