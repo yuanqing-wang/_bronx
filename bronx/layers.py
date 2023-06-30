@@ -71,8 +71,14 @@ class Linear(pyro.nn.PyroModule):
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
-            in_features, out_features, activation=torch.nn.SiLU(), 
-            idx=0, num_heads=4,
+            in_features, 
+            out_features, 
+            activation=torch.nn.SiLU(), 
+            idx=0, 
+            num_heads=4,
+            sigma_factor=1.0,
+            t=1.0,
+            gamma=1.0,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -117,16 +123,10 @@ class BronxLayer(pyro.nn.PyroModule):
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
-<<<<<<< HEAD
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
             with pyro.poutine.scale(None, self.kl_scale):
-=======
-        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(0.5 * g.ndata["train_mask"].sum() / g.number_of_edges())):
-
->>>>>>> 1f483d36f0c0ec702c1216e5f29c0da21d1d8d22
                 e = pyro.sample(
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
@@ -137,31 +137,19 @@ class BronxLayer(pyro.nn.PyroModule):
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),
                 )
-<<<<<<< HEAD
 
         h = linear_diffusion(g, h0, e, t=self.t, gamma=self.gamma)
         if self.projection:
             h = self.fc(h)
-=======
-        h = linear_diffusion(g, h0, e)
-
->>>>>>> 1f483d36f0c0ec702c1216e5f29c0da21d1d8d22
         return h
 
     def forward(self, g, h):
         g = g.local_var()
-<<<<<<< HEAD
         h0 = h
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
             with pyro.poutine.scale(None, self.kl_scale):
-=======
-        # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
-        with pyro.plate(f"edges{self.idx}", g.number_of_edges(), device=g.device):
-            with pyro.poutine.scale(None, float(0.5 * g.ndata["train_mask"].sum() / g.number_of_edges())):
-
->>>>>>> 1f483d36f0c0ec702c1216e5f29c0da21d1d8d22
                 e = pyro.sample(
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
