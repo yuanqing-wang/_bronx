@@ -36,38 +36,6 @@ def linear_diffusion(g, h, e, k=6, t=1, gamma=1):
     result = gamma * result
     return result
 
-
-class Linear(pyro.nn.PyroModule):
-    def __init__(self, in_features, out_features, idx=0):
-        super().__init__()
-        self.w_mu = torch.nn.Parameter(torch.randn(in_features, out_features))
-        self.w_log_sigma = torch.nn.Parameter(1e-3 * torch.randn(in_features, out_features))
-        self.idx = idx
-        self.in_features = in_features
-        self.out_features = out_features
-
-    def forward(self, x):
-        with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
-            w = pyro.sample(
-                    f"w{self.idx}",
-                    pyro.distributions.Normal(
-                        torch.zeros_like(self.w_mu), 
-                        torch.ones_like(self.w_log_sigma.exp()),
-                    ).to_event(1),
-            )
-        return x @ w
-
-    def guide(self, x):
-        with pyro.plate(f"weight{self.idx}", self.in_features, device=x.device):
-            w = pyro.sample(
-                    f"w{self.idx}",
-                    pyro.distributions.Normal(
-                        self.w_mu, 
-                        self.w_log_sigma.exp(),
-                    ).to_event(1),
-            )
-        return x @ w
-
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
             self, 
