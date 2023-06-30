@@ -11,7 +11,7 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-def linear_diffusion(g, h, e, k=6, t=1, gamma=1):
+def linear_diffusion(g, h, e, k=6, t=1, gamma=0.0):
     g = g.local_var()
     parallel = e.dim() == 4
     if parallel:
@@ -22,10 +22,13 @@ def linear_diffusion(g, h, e, k=6, t=1, gamma=1):
     h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
     g.edata["e"] = e
     g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
+    g = dgl.add_self_loop(g)
+    src, dst = g.edges()
+    g.edata["e"][src==dst, ...] = gamma
     g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
     g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
     g.ndata["x"] = h
-    result = h
+    result = 0.0
     g.edata["e"] = t * g.edata["e"]
     for i in range(1, k + 1):
         g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
@@ -33,7 +36,6 @@ def linear_diffusion(g, h, e, k=6, t=1, gamma=1):
     if parallel:
         result = result.swapaxes(0, 1)
     result = result.flatten(-2, -1)
-    result = gamma * result
     return result
 
 class BronxLayer(pyro.nn.PyroModule):

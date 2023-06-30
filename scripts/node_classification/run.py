@@ -120,7 +120,7 @@ def run(args):
                 y_hat
             )
             scheduler.step(accuracy)
-            print(accuracy, flush=True)
+            # print(accuracy, flush=True)
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
                 "param_groups"
@@ -128,7 +128,6 @@ def run(args):
 
             if lr <= 1e-6:
                 break
-        
     print(accuracy, flush=True)
     return accuracy
 
@@ -140,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--num_samples", type=int, default=32)
