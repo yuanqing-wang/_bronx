@@ -14,6 +14,10 @@ class BronxModel(pyro.nn.PyroModule):
             dropout=0.0,
             edge_drop=0.0,
             num_heads=4,
+            sigma_factor=1.0,
+            kl_scale=1.0,
+            t=1.0,
+            gamma=1.0,
         ):
         super().__init__()
         if embedding_features is None:

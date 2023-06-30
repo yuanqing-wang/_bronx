@@ -77,6 +77,7 @@ class BronxLayer(pyro.nn.PyroModule):
             idx=0, 
             num_heads=4,
             sigma_factor=1.0,
+            kl_scale=1.0,
             t=1.0,
             gamma=1.0,
         ):
@@ -92,10 +93,6 @@ class BronxLayer(pyro.nn.PyroModule):
         self.kl_scale = kl_scale
         self.t = t
         self.gamma = gamma
-
-        if projection:
-            self.fc = torch.nn.Linear(in_features, in_features, bias=False)
-        self.projection = projection
 
     def guide(self, g, h):
         g = g.local_var()
@@ -139,8 +136,6 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = linear_diffusion(g, h0, e, t=self.t, gamma=self.gamma)
-        if self.projection:
-            h = self.fc(h)
         return h
 
     def forward(self, g, h):
@@ -172,6 +167,4 @@ class BronxLayer(pyro.nn.PyroModule):
                 )
 
         h = linear_diffusion(g, h, e, t=self.t, gamma=self.gamma)
-        if self.projection:
-            h = self.fc(h)
         return h
