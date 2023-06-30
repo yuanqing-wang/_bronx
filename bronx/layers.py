@@ -11,7 +11,7 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-def linear_diffusion(g, h, e, k=6, t=1):
+def linear_diffusion(g, h, e, k=6, t=1, gamma=1):
     g = g.local_var()
     parallel = e.dim() == 4
     if parallel:
@@ -33,6 +33,7 @@ def linear_diffusion(g, h, e, k=6, t=1):
     if parallel:
         result = result.swapaxes(0, 1)
     result = result.flatten(-2, -1)
+    result = gamma * result
     return result
 
 class BronxLayer(pyro.nn.PyroModule):
@@ -47,14 +48,13 @@ class BronxLayer(pyro.nn.PyroModule):
         kl_scale=1.0,
         projection=False,
         t=1.0,
+        gamma=1.0,
     ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(
             in_features, out_features, bias=False
         )
-
-        self.gamma = pyro.nn.PyroParam(torch.zeros(in_features))
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -63,6 +63,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
         self.t = t
+        self.gamma = gamma
 
         if projection:
             self.fc = torch.nn.Linear(in_features, in_features, bias=False)
@@ -109,15 +110,14 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = linear_diffusion(g, h0, e, t=self.t)
-        h = h * self.gamma.exp()
+        h = linear_diffusion(g, h0, e, t=self.t, gamma=self.gamma)
         if self.projection:
             h = self.fc(h)
         return h
 
     def forward(self, g, h):
         g = g.local_var()
-        # with pyro.plate(f"heads{self.idx}", self.num_heads, device=g.device):
+        h0 = h
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
@@ -143,8 +143,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = linear_diffusion(g, h, e, t=self.t)
-        h = h * self.gamma.exp()
+        h = linear_diffusion(g, h, e, t=self.t, gamma=self.gamma)
         if self.projection:
             h = self.fc(h)
         return h

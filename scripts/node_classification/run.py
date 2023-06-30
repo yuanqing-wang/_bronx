@@ -63,6 +63,7 @@ def run(args):
         sigma_factor=args.sigma_factor,
         kl_scale=float(0.5 * g.ndata["train_mask"].sum () / g.number_of_nodes()),
         t=args.t,
+        gamma=args.gamma,
     )
 
     if torch.cuda.is_available():
@@ -95,7 +96,7 @@ def run(args):
         ),
     )
 
-    for idx in range(5000):
+    for idx in range(100):
         model.train()
         loss = svi.step(
             g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"]
@@ -118,24 +119,17 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
-            print(accuracy, flush=True)
             scheduler.step(accuracy)
+            print(accuracy, flush=True)
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
                 "param_groups"
             ][0]["lr"]
 
             if lr <= 1e-6:
-                y_te = g.ndata["label"][g.ndata["test_mask"]]
-                y_hat_te = predictive(
-                    g, g.ndata["feat"], mask=g.ndata["test_mask"]
-                )["_RETURN"].mean(0)
-                accuracy_te = float(
-                    (y_hat_te.argmax(-1) == y_te.argmax(-1)).sum()) / len(
-                        y_hat_te
-                )
-                return accuracy, accuracy_te
-
+                break
+        
+    print(accuracy, flush=True)
     return accuracy
 
 if __name__ == "__main__":
@@ -154,6 +148,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--sigma_factor", type=float, default=1.0)
     parser.add_argument("--t", type=float, default=1.0)
+    parser.add_argument("--gamma", type=float, default=1.0)
     args = parser.parse_args()
-    print(args)
     run(args)

@@ -18,6 +18,7 @@ class BronxModel(pyro.nn.PyroModule):
         sigma_factor=1.0,
         kl_scale=1.0,
         t=1.0,
+        gamma=1.0,
     ):
         super().__init__()
         if embedding_features is None:
@@ -42,6 +43,7 @@ class BronxModel(pyro.nn.PyroModule):
                     sigma_factor=sigma_factor,
                     kl_scale=kl_scale,
                     t=t,
+                    gamma=gamma,
                 ),
             )
 
@@ -51,8 +53,6 @@ class BronxModel(pyro.nn.PyroModule):
 
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
-            h = self.activation(h)
-
         return h
 
     def forward(self, g, h, *args, **kwargs):

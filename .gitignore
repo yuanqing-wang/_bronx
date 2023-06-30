@@ -134,3 +134,4 @@ dmypy.json
 *.csv
 *.stdout
 *.txt
+events*
