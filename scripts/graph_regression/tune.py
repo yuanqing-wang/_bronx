@@ -20,6 +20,7 @@ def experiment(args):
     print(name)
 
     param_space = {
+<<<<<<< HEAD:scripts/graph_regression/tune.py
         "data": tune.choice([args.data]),
         "hidden_features": tune.randint(8, 16),
         "embedding_features": tune.randint(8, 16),
@@ -31,6 +32,20 @@ def experiment(args):
         "factor": tune.uniform(0.5, 1.0),
         "num_samples": tune.choice([16]),
         "num_particles": tune.choice([16]),
+=======
+        "data": tune.choice(["cora"]),
+        "hidden_features": tune.randint(8, 16),
+        "embedding_features": tune.randint(8, 16),
+        "num_heads": tune.randint(8, 16),
+        "depth": tune.randint(1, 6),
+        "learning_rate": tune.loguniform(1e-3, 1e-2),
+        "weight_decay": tune.loguniform(1e-6, 1e-3),
+        "patience": tune.randint(5, 10),
+        "factor": tune.uniform(0.5, 0.8),
+        "num_samples": tune.choice([32]),
+        "num_particles": tune.choice([32]),
+        "num_factors": tune.randint(1, 4),
+>>>>>>> 1f483d36f0c0ec702c1216e5f29c0da21d1d8d22:scripts/planetoid/tune.py
     }
 
     tune_config = tune.TuneConfig(
@@ -41,7 +56,11 @@ def experiment(args):
     )
 
     run_config = air.RunConfig(
+<<<<<<< HEAD:scripts/graph_regression/tune.py
         verbose=0,
+=======
+        # verbose=0, 
+>>>>>>> 1f483d36f0c0ec702c1216e5f29c0da21d1d8d22:scripts/planetoid/tune.py
         name=name,
     )
 

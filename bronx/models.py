@@ -7,19 +7,14 @@ from .layers import BronxLayer
 
 class BronxModel(pyro.nn.PyroModule):
     def __init__(
-        self,
-        in_features,
-        hidden_features,
-        out_features,
-        embedding_features=None,
-        activation=torch.nn.SiLU(),
-        depth=2,
-        num_heads=4,
-        sigma_factor=1.0,
-        kl_scale=1.0,
-        t=1.0,
-        gamma=1.0,
-    ):
+            self, in_features, hidden_features, out_features, 
+            embedding_features=None,
+            activation=torch.nn.SiLU(),
+            depth=2,
+            dropout=0.0,
+            edge_drop=0.0,
+            num_heads=4,
+        ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
@@ -29,6 +24,7 @@ class BronxModel(pyro.nn.PyroModule):
         )
         self.activation = activation
         self.depth = depth
+        self.dropout = torch.nn.Dropout(0.5)
 
         for idx in range(depth):
             setattr(
@@ -50,6 +46,7 @@ class BronxModel(pyro.nn.PyroModule):
     def guide(self, g, h, *args, **kwargs):
         h = self.fc_in(h)
         h = self.activation(h)
+        h = self.dropout(h)
 
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
