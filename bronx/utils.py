@@ -1,4 +1,6 @@
 import torch
+
+
 class EarlyStopping(object):
     best_losses = None
     best_state = None
@@ -12,11 +14,21 @@ class EarlyStopping(object):
             self.best_losses = losses
             self.counter = 0
 
-        elif any(loss <= best_loss for loss, best_loss in zip(losses, self.best_losses)):
-            if all(loss <= best_loss for loss, best_loss in zip(losses, self.best_losses)):
+        elif any(
+            loss <= best_loss
+            for loss, best_loss in zip(losses, self.best_losses)
+        ):
+            if all(
+                loss <= best_loss
+                for loss, best_loss in zip(losses, self.best_losses)
+            ):
                 import copy
+
                 self.best_state = copy.deepcopy(model.state_dict())
-            self.best_losses = [min(loss, best_loss) for loss, best_loss in zip(losses, self.best_losses)]
+            self.best_losses = [
+                min(loss, best_loss)
+                for loss, best_loss in zip(losses, self.best_losses)
+            ]
             self.counter = 0
 
         else:
@@ -25,7 +37,6 @@ class EarlyStopping(object):
                 return True
 
         return False
-
 
 
 def personalized_page_rank(alpha, k):
