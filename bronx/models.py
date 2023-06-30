@@ -24,9 +24,7 @@ class BronxModel(pyro.nn.PyroModule):
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(
-            hidden_features, out_features, bias=False
-        )
+        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.activation = activation
         self.depth = depth
 
@@ -58,14 +56,11 @@ class BronxModel(pyro.nn.PyroModule):
     def forward(self, g, h, *args, **kwargs):
         h = self.fc_in(h)
         h = self.activation(h)
-
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
-        
         h = self.activation(h)
         h = self.fc_out(h)
         return h
-
 
 class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):

@@ -55,6 +55,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_log_sigma = torch.nn.Linear(
             in_features, out_features, bias=False
         )
+
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
