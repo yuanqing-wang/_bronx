@@ -51,6 +51,7 @@ def experiment(args):
         verbose=0,
         name=name,
         local_dir=args.data,
+        stop={"time_total_s": 100},
     )
 
     tuner = tune.Tuner(
