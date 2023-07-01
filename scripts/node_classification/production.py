@@ -4,7 +4,6 @@ from ray.tune import ExperimentAnalysis
 from run import run as run_experiment
 from tune import multiply_by_heads
 
-
 def run(path):
     analysis = ExperimentAnalysis(path)
     trial = analysis.get_best_trial("_metric/accuracy", "max", "all")
