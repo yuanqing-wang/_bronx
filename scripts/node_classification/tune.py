@@ -36,8 +36,8 @@ def experiment(args):
         "num_samples": tune.choice([32]),
         "num_particles": tune.choice([32]),
         "sigma_factor": tune.uniform(0.5, 5.0),
-        "t": tune.choice([1.0]),
-        "gamma": tune.uniform(0.5, 2.0),
+        "t": tune.uniform(0.5, 2.0),
+        "gamma": tune.uniform(-0.5, 0.0),
     }
 
     tune_config = tune.TuneConfig(

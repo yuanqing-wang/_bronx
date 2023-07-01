@@ -120,6 +120,7 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
+
             scheduler.step(accuracy)
             accuracies.append(accuracy)
 
@@ -144,11 +145,11 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=128)
-    parser.add_argument("--num_particles", type=int, default=128)
+    parser.add_argument("--num_samples", type=int, default=32)
+    parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--sigma_factor", type=float, default=1.0)
     parser.add_argument("--t", type=float, default=1.0)
-    parser.add_argument("--gamma", type=float, default=0.5)
+    parser.add_argument("--gamma", type=float, default=0.0)
     args = parser.parse_args()
     run(args)

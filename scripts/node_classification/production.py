@@ -11,6 +11,7 @@ def run(path):
     accuracy = trial.metric_analysis["_metric/accuracy"]["max"]
     print(accuracy)
     config = trial.config
+    print(config)
     config = multiply_by_heads(config)
     config = SimpleNamespace(**config)  
     accuracy = run_experiment(config)
