@@ -13,8 +13,8 @@ def run(path):
     config = trial.config
     config = multiply_by_heads(config)
     config = SimpleNamespace(**config)  
-    accuracy, accuracy_te = run_experiment(config)
-    print(accuracy, accuracy_te)
+    accuracy = run_experiment(config)
+    print(accuracy)
 
 if __name__ == "__main__":
     import sys

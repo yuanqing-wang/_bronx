@@ -96,6 +96,7 @@ def run(args):
         ),
     )
 
+    accuracies = []
     for idx in range(100):
         model.train()
         loss = svi.step(
@@ -120,7 +121,7 @@ def run(args):
                 y_hat
             )
             scheduler.step(accuracy)
-            # print(accuracy, flush=True)
+            accuracies.append(accuracy)
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
                 "param_groups"
@@ -128,7 +129,8 @@ def run(args):
 
             if lr <= 1e-6:
                 break
-    print(accuracy, flush=True)
+
+    accuracy = max(accuracies)
     return accuracy
 
 if __name__ == "__main__":
@@ -142,11 +144,11 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
-    parser.add_argument("--num_samples", type=int, default=32)
-    parser.add_argument("--num_particles", type=int, default=32)
+    parser.add_argument("--num_samples", type=int, default=128)
+    parser.add_argument("--num_particles", type=int, default=128)
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--sigma_factor", type=float, default=1.0)
     parser.add_argument("--t", type=float, default=1.0)
-    parser.add_argument("--gamma", type=float, default=1.0)
+    parser.add_argument("--gamma", type=float, default=0.5)
     args = parser.parse_args()
     run(args)
