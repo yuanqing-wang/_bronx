@@ -122,6 +122,7 @@ def run(args):
             )
 
             scheduler.step(accuracy)
+            print(accuracy)
             accuracies.append(accuracy)
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][

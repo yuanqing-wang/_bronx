@@ -31,20 +31,26 @@ class BronxModel(pyro.nn.PyroModule):
         self.dropout = torch.nn.Dropout(0.5)
 
         for idx in range(depth):
+            layer = BronxLayer(
+                hidden_features,
+                embedding_features,
+                activation=activation,
+                idx=idx,
+                num_heads=num_heads,
+                sigma_factor=sigma_factor,
+                kl_scale=kl_scale,
+                t=t,
+                gamma=gamma,
+            )
+
+            if idx > 0:
+                layer.fc_mu = self.layer0.fc_mu
+                layer.fc_log_sigma = self.layer0.fc_log_sigma
+            
             setattr(
                 self,
                 f"layer{idx}",
-                BronxLayer(
-                    hidden_features,
-                    embedding_features,
-                    activation=activation,
-                    idx=idx,
-                    num_heads=num_heads,
-                    sigma_factor=sigma_factor,
-                    kl_scale=kl_scale,
-                    t=t,
-                    gamma=gamma,
-                ),
+                layer,
             )
 
     def guide(self, g, h, *args, **kwargs):
