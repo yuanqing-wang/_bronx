@@ -2,8 +2,7 @@ import torch
 import dgl
 import pyro
 from pyro import poutine
-from .layers import BronxLayer
-
+from .layers import BronxLayer, NodeRecover, EdgeRecover
 
 class BronxModel(pyro.nn.PyroModule):
     def __init__(
@@ -42,16 +41,17 @@ class BronxModel(pyro.nn.PyroModule):
                 t=t,
                 gamma=gamma,
             )
-
-            # if idx > 0:
-            #     layer.fc_mu = self.layer0.fc_mu
-            #     layer.fc_log_sigma = self.layer0.fc_log_sigma
             
             setattr(
                 self,
                 f"layer{idx}",
                 layer,
             )
+
+        self.node_recover = NodeRecover(hidden_features, in_features)
+        self.edge_recover = EdgeRecover(
+            hidden_features, embedding_features,
+        )
 
     def guide(self, g, h, kl_anneal=1.0, *args, **kwargs):
         h = self.fc_in(h)
@@ -63,6 +63,7 @@ class BronxModel(pyro.nn.PyroModule):
         return h
 
     def forward(self, g, h, kl_anneal=1.0, *args, **kwargs):
+        h0 = h
         h = self.fc_in(h)
         h = self.activation(h)
 
@@ -70,9 +71,10 @@ class BronxModel(pyro.nn.PyroModule):
             h = getattr(self, f"layer{idx}")(g, h, kl_anneal=kl_anneal)
         
         h = self.activation(h)
+        self.node_recover(g, h, h0)
+        self.edge_recover(g, h)
         h = self.fc_out(h)
         return h
-
 
 class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):

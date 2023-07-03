@@ -99,7 +99,7 @@ def run(args):
     )
 
     accuracies = []
-    for idx in range(100):
+    for idx in range(1000):
         # kl_anneal = anneal_schedule(idx, 50)
         model.train()
         loss = svi.step(
@@ -123,7 +123,7 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
-            print(accuracy)
+            print(accuracy, loss, flush=True)
             scheduler.step(accuracy)
             accuracies.append(accuracy)
 

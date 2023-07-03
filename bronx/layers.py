@@ -140,3 +140,65 @@ class BronxLayer(pyro.nn.PyroModule):
 
         h = linear_diffusion(g, h, e, t=self.t, gamma=self.gamma)
         return h
+
+class NodeRecover(pyro.nn.PyroModule):
+    def __init__(self, in_features, out_features, sigma=1.0):
+        super().__init__()
+        self.fc = torch.nn.Linear(in_features, out_features, bias=False)
+        self.sigma = sigma
+
+    def forward(self, g, h, y):
+        g = g.local_var()
+        h = h - h.mean(-1, keepdims=True)
+        h = torch.nn.functional.normalize(h, dim=-1)
+        h = self.fc(h)
+        with pyro.poutine.scale(None, 1e-4):
+            with pyro.plate("nodes", g.number_of_nodes(), device=g.device):
+                pyro.sample(
+                    "node_recover",
+                    pyro.distributions.Normal(h, self.sigma).to_event(1),
+                    obs=y,
+                )
+
+class EdgeRecover(pyro.nn.PyroModule):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.fc = torch.nn.Linear(in_features, out_features, bias=False)
+
+    def forward(self, g, h):
+        g = g.local_var()
+        h = h - h.mean(-1, keepdims=True)
+        h = torch.nn.functional.normalize(h, dim=-1)
+        h = self.fc(h)
+        src, dst = g.edges()
+        src_fake = torch.randint(high=g.number_of_nodes(), size=(g.number_of_edges(),), device=g.device)
+        dst_fake = torch.randint(high=g.number_of_nodes(), size=(g.number_of_edges(),), device=g.device)
+
+        with pyro.poutine.scale(None, 1e-5):
+            with pyro.plate("real_edges", g.number_of_edges(), device=g.device):
+                pyro.sample(
+                    "edge_recover_real",
+                    pyro.distributions.Bernoulli(
+                        torch.sigmoid(
+                            (h[..., src, :] * h[..., dst, :]).sum(-1)
+                        )
+                    ),
+                    obs=torch.ones(g.number_of_edges(), device=g.device),
+                )
+
+                pyro.sample(
+                    "edge_recover_fake",
+                    pyro.distributions.Bernoulli(
+                        torch.sigmoid(
+                            (h[..., src_fake, :] * h[..., dst_fake, :]).sum(-1)
+                        ),
+                    ),
+                    obs=torch.zeros(g.number_of_edges(), device=g.device),
+                )
+
+
+
+
+
+                
+

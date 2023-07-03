@@ -48,6 +48,7 @@ def experiment(args):
         num_samples=1000,
     )
 
+
     run_config = air.RunConfig(
         verbose=0,
         name=name,
