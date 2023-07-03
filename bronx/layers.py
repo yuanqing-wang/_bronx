@@ -66,7 +66,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.t = t
         self.gamma = gamma
 
-    def guide(self, g, h):
+    def guide(self, g, h, kl_anneal=1.0):
         g = g.local_var()
         h0 = h
         h = h - h.mean(-1, keepdims=True)
@@ -95,7 +95,7 @@ class BronxLayer(pyro.nn.PyroModule):
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
-            with pyro.poutine.scale(None, self.kl_scale):
+            with pyro.poutine.scale(None, self.kl_scale * kl_anneal):
                 e = pyro.sample(
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
@@ -110,13 +110,13 @@ class BronxLayer(pyro.nn.PyroModule):
         h = linear_diffusion(g, h0, e, t=self.t, gamma=self.gamma)
         return h
 
-    def forward(self, g, h):
+    def forward(self, g, h, kl_anneal=1.0):
         g = g.local_var()
         h0 = h
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
-            with pyro.poutine.scale(None, self.kl_scale):
+            with pyro.poutine.scale(None, self.kl_scale * kl_anneal):
                 e = pyro.sample(
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(

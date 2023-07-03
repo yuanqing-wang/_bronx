@@ -6,6 +6,7 @@ import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
 from bronx.models import NodeClassificationBronxModel
+from bronx.utils import anneal_schedule
 
 def run(args):
     pyro.clear_param_store()
@@ -61,7 +62,10 @@ def run(args):
         depth=args.depth,
         num_heads=args.num_heads,
         sigma_factor=args.sigma_factor,
-        kl_scale=float(0.5 * g.ndata["train_mask"].sum () / g.number_of_nodes()),
+        kl_scale=float(
+            0.5 * g.ndata["train_mask"].sum () \
+            / (g.number_of_edges() * args.num_heads),
+        ),
         t=args.t,
         gamma=args.gamma,
     )
@@ -98,9 +102,10 @@ def run(args):
 
     accuracies = []
     for idx in range(100):
+        # kl_anneal = anneal_schedule(idx, 50)
         model.train()
         loss = svi.step(
-            g, g.ndata["feat"], g.ndata["label"], g.ndata["train_mask"]
+            g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
         model.eval()
 
@@ -120,9 +125,8 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
-
-            scheduler.step(accuracy)
             print(accuracy)
+            scheduler.step(accuracy)
             accuracies.append(accuracy)
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
@@ -151,6 +155,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--sigma_factor", type=float, default=1.0)
     parser.add_argument("--t", type=float, default=1.0)
-    parser.add_argument("--gamma", type=float, default=0.0)
+    parser.add_argument("--gamma", type=float, default=-1.0)
     args = parser.parse_args()
     run(args)

@@ -43,9 +43,9 @@ class BronxModel(pyro.nn.PyroModule):
                 gamma=gamma,
             )
 
-            if idx > 0:
-                layer.fc_mu = self.layer0.fc_mu
-                layer.fc_log_sigma = self.layer0.fc_log_sigma
+            # if idx > 0:
+            #     layer.fc_mu = self.layer0.fc_mu
+            #     layer.fc_log_sigma = self.layer0.fc_log_sigma
             
             setattr(
                 self,
@@ -53,21 +53,21 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-    def guide(self, g, h, *args, **kwargs):
+    def guide(self, g, h, kl_anneal=1.0, *args, **kwargs):
         h = self.fc_in(h)
         h = self.activation(h)
         h = self.dropout(h)
 
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}").guide(g, h)
+            h = getattr(self, f"layer{idx}").guide(g, h, kl_anneal=kl_anneal)
         return h
 
-    def forward(self, g, h, *args, **kwargs):
+    def forward(self, g, h, kl_anneal=1.0, *args, **kwargs):
         h = self.fc_in(h)
         h = self.activation(h)
 
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h)
+            h = getattr(self, f"layer{idx}")(g, h, kl_anneal=kl_anneal)
         
         h = self.activation(h)
         h = self.fc_out(h)
@@ -78,8 +78,8 @@ class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def forward(self, g, h, y=None, mask=None):
-        h = super().forward(g, h)
+    def forward(self, g, h, kl_anneal=1.0, y=None, mask=None):
+        h = super().forward(g, h, kl_anneal=kl_anneal)
         h = h.softmax(-1)
         if mask is not None:
             h = h[..., mask, :]

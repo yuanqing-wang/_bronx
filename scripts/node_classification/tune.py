@@ -21,23 +21,23 @@ def objective(args):
 def experiment(args):
     ray.init(num_gpus=1, num_cpus=1)
     name = datetime.now().strftime("%m%d%Y%H%M%S")
-    print(name)
+    print(name) 
 
     param_space = {
         "data": tune.choice([args.data]),
         "hidden_features": tune.randint(8, 32),
         "embedding_features": tune.randint(8, 32),
         "num_heads": tune.randint(4, 32),
-        "depth": tune.randint(1, 3),
-        "learning_rate": tune.choice([1e-2]),
-        "weight_decay": tune.choice([1e-3]),
-        "patience": tune.choice([5]),
-        "factor": tune.choice([0.5]),
+        "depth": tune.randint(2, 6),
+        "learning_rate": tune.loguniform(1e-3, 1e-2),
+        "weight_decay": tune.loguniform(1e-5, 1e-3),
+        "patience": tune.randint(5, 10),
+        "factor": tune.uniform(0.2, 0.9),
         "num_samples": tune.choice([32]),
         "num_particles": tune.choice([32]),
         "sigma_factor": tune.uniform(0.5, 5.0),
         "t": tune.uniform(0.5, 2.0),
-        "gamma": tune.uniform(-0.5, 0.0),
+        "gamma": tune.uniform(-1.0, 0.0),
     }
 
     tune_config = tune.TuneConfig(
