@@ -38,6 +38,7 @@ def experiment(args):
         "sigma_factor": tune.uniform(0.5, 5.0),
         "t": tune.uniform(0.5, 2.0),
         "gamma": tune.uniform(-1.0, 0.0),
+        "optimizer": tune.choice(["Adam", "AdamW", "RMSprop"]),
     }
 
     tune_config = tune.TuneConfig(

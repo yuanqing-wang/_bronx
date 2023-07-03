@@ -75,9 +75,7 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = (
-        torch.optim.Adam
-    )  # ({"lr": args.learning_rate, "weight_decay": args.weight_decay})
+    optimizer = getattr(torch.optim, args.optimizer)
     scheduler = pyro.optim.ReduceLROnPlateau(
         {
             "optimizer": optimizer,
@@ -156,5 +154,6 @@ if __name__ == "__main__":
     parser.add_argument("--sigma_factor", type=float, default=1.0)
     parser.add_argument("--t", type=float, default=1.0)
     parser.add_argument("--gamma", type=float, default=-1.0)
+    parser.add_argument("--optimizer", type=str, default="Adam")
     args = parser.parse_args()
     run(args)
