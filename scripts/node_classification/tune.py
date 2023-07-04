@@ -4,7 +4,7 @@ from run import run
 import ray
 from ray import tune, air, train
 from ray.tune.trainable import session
-from ray.tune.search.optuna import OptunaSearch
+from ray.tune.search.ax import AxSearch
 
 def multiply_by_heads(args):
     args["embedding_features"] = (
@@ -16,7 +16,8 @@ def multiply_by_heads(args):
 def objective(args):
     args = multiply_by_heads(args)
     args = SimpleNamespace(**args)
-    session.report({"accuracy": run(args)})
+    accuracy = sum([run(args) for _ in range(3)]) / 3
+    session.report({"accuracy": accuracy})
 
 def experiment(args):
     ray.init(num_gpus=1, num_cpus=1)
@@ -25,26 +26,29 @@ def experiment(args):
 
     param_space = {
         "data": tune.choice([args.data]),
-        "hidden_features": tune.randint(8, 32),
-        "embedding_features": tune.randint(8, 32),
+        "hidden_features": tune.randint(4, 32),
+        "embedding_features": tune.randint(4, 32),
         "num_heads": tune.randint(4, 32),
         "depth": tune.randint(2, 6),
         "learning_rate": tune.loguniform(1e-3, 1e-2),
         "weight_decay": tune.loguniform(1e-5, 1e-3),
         "patience": tune.randint(5, 10),
-        "factor": tune.uniform(0.2, 0.9),
-        "num_samples": tune.choice([32]),
-        "num_particles": tune.choice([32]),
+        "factor": tune.uniform(0.1, 0.9),
+        "num_samples": tune.choice([16]),
+        "num_particles": tune.choice([16]),
         "sigma_factor": tune.uniform(0.5, 5.0),
         "t": tune.uniform(0.5, 2.0),
         "gamma": tune.uniform(-1.0, 0.0),
         "optimizer": tune.choice(["Adam", "AdamW", "RMSprop"]),
+        "node_recover_scale": tune.loguniform(1e-5, 1e-3),
+        "edge_recover_scale": tune.loguniform(1e-5, 1e-3),
+        "test": tune.choice([0]),
     }
 
     tune_config = tune.TuneConfig(
         metric="_metric/accuracy",
         mode="max",
-        search_alg=OptunaSearch(),
+        search_alg=AxSearch(),
         num_samples=1000,
     )
 

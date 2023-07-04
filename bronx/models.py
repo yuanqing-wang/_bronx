@@ -17,6 +17,8 @@ class BronxModel(pyro.nn.PyroModule):
             kl_scale=1.0,
             t=1.0,
             gamma=1.0,
+            edge_recover_scale=1e-5,
+            node_recover_scale=1e-5,
         ):
         super().__init__()
         if embedding_features is None:
@@ -48,9 +50,11 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        self.node_recover = NodeRecover(hidden_features, in_features)
+        self.node_recover = NodeRecover(
+            hidden_features, in_features, scale=node_recover_scale,
+        )
         self.edge_recover = EdgeRecover(
-            hidden_features, embedding_features,
+            hidden_features, embedding_features, scale=edge_recover_scale,
         )
 
     def guide(self, g, h, kl_anneal=1.0, *args, **kwargs):

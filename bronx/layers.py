@@ -142,17 +142,18 @@ class BronxLayer(pyro.nn.PyroModule):
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
-    def __init__(self, in_features, out_features, sigma=1.0):
+    def __init__(self, in_features, out_features, sigma=1.0, scale=1.0):
         super().__init__()
         self.fc = torch.nn.Linear(in_features, out_features, bias=False)
         self.sigma = sigma
+        self.scale = scale
 
     def forward(self, g, h, y):
         g = g.local_var()
         h = h - h.mean(-1, keepdims=True)
         h = torch.nn.functional.normalize(h, dim=-1)
         h = self.fc(h)
-        with pyro.poutine.scale(None, 1e-4):
+        with pyro.poutine.scale(None, self.scale):
             with pyro.plate("nodes", g.number_of_nodes(), device=g.device):
                 pyro.sample(
                     "node_recover",
@@ -161,9 +162,10 @@ class NodeRecover(pyro.nn.PyroModule):
                 )
 
 class EdgeRecover(pyro.nn.PyroModule):
-    def __init__(self, in_features, out_features):
+    def __init__(self, in_features, out_features, scale=1.0):
         super().__init__()
         self.fc = torch.nn.Linear(in_features, out_features, bias=False)
+        self.scale = scale
 
     def forward(self, g, h):
         g = g.local_var()
@@ -174,7 +176,7 @@ class EdgeRecover(pyro.nn.PyroModule):
         src_fake = torch.randint(high=g.number_of_nodes(), size=(g.number_of_edges(),), device=g.device)
         dst_fake = torch.randint(high=g.number_of_nodes(), size=(g.number_of_edges(),), device=g.device)
 
-        with pyro.poutine.scale(None, 1e-5):
+        with pyro.poutine.scale(None, self.scale):
             with pyro.plate("real_edges", g.number_of_edges(), device=g.device):
                 pyro.sample(
                     "edge_recover_real",

@@ -12,9 +12,12 @@ def run(path):
     config = trial.config
     print(config)
     config = multiply_by_heads(config)
+    config["test"] = 1
+    config["num_samples"] = 16
+    config["num_particles"] = 16
     config = SimpleNamespace(**config)  
-    accuracy = run_experiment(config)
-    print(accuracy)
+    accuracy, accuracy_te = run_experiment(config)
+    print(accuracy, accuracy_te)
 
 if __name__ == "__main__":
     import sys
