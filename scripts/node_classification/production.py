@@ -13,8 +13,8 @@ def run(path, n_repeat=3):
     print(config)
     config = multiply_by_heads(config)
     config["test"] = 1
-    config["num_samples"] = 16
-    config["num_particles"] = 16
+    # config["num_samples"] = 8
+    # config["num_particles"] = 8
     config = SimpleNamespace(**config)  
 
     accuracies = []

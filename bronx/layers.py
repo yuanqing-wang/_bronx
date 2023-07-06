@@ -142,10 +142,9 @@ class BronxLayer(pyro.nn.PyroModule):
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
-    def __init__(self, in_features, out_features, sigma=1.0, scale=1.0):
+    def __init__(self, in_features, out_features, scale=1.0):
         super().__init__()
         self.fc = torch.nn.Linear(in_features, out_features, bias=False)
-        self.sigma = sigma
         self.scale = scale
 
     def forward(self, g, h, y):
@@ -157,8 +156,8 @@ class NodeRecover(pyro.nn.PyroModule):
             with pyro.plate("nodes", g.number_of_nodes(), device=g.device):
                 pyro.sample(
                     "node_recover",
-                    pyro.distributions.Normal(h, self.sigma).to_event(1),
-                    obs=y,
+                    pyro.distributions.Bernoulli(h.sigmoid()).to_event(1),
+                    obs=1.0 * (y > 0),
                 )
 
 class EdgeRecover(pyro.nn.PyroModule):
@@ -181,9 +180,7 @@ class EdgeRecover(pyro.nn.PyroModule):
                 pyro.sample(
                     "edge_recover_real",
                     pyro.distributions.Bernoulli(
-                        torch.sigmoid(
-                            (h[..., src, :] * h[..., dst, :]).sum(-1)
-                        )
+                            (h[..., src, :] * h[..., dst, :]).sum(-1).sigmoid(),
                     ),
                     obs=torch.ones(g.number_of_edges(), device=g.device),
                 )

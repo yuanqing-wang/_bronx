@@ -62,14 +62,13 @@ def run(args):
         depth=args.depth,
         num_heads=args.num_heads,
         sigma_factor=args.sigma_factor,
-        kl_scale=float(
-            0.5 * g.ndata["train_mask"].sum () \
-            / (g.number_of_edges() * args.num_heads * args.depth),
-        ),
+        kl_scale=args.kl_scale,
         t=args.t,
         gamma=args.gamma,
         node_recover_scale=args.node_recover_scale,
         edge_recover_scale=args.edge_recover_scale,
+        dropout_in=args.dropout_in,
+        dropout_out=args.dropout_out,
     )
 
     if torch.cuda.is_available():
@@ -129,7 +128,6 @@ def run(args):
             scheduler.step(accuracy)
             accuracies.append(accuracy)
 
-
             if args.test:
                 y_hat = predictive(
                     g, g.ndata["feat"], mask=g.ndata["test_mask"]
@@ -151,6 +149,7 @@ def run(args):
         accuracies = np.array(accuracies)
         accuracy = accuracies.max()
         accuracy_te = accuracies_te[np.argmax(accuracies)]
+        print(accuracy, accuracy_te, flush=True)
         return accuracy, accuracy_te
 
     accuracy = max(accuracies)
@@ -177,6 +176,9 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--node_recover_scale", type=float, default=1e-5)
     parser.add_argument("--edge_recover_scale", type=float, default=1e-5)
+    parser.add_argument("--kl_scale", type=float, default=1.0)
+    parser.add_argument("--dropout_in", type=float, default=0.0)
+    parser.add_argument("--dropout_out", type=float, default=0.0)
     parser.add_argument("--test", type=int, default=0)
     args = parser.parse_args()
     run(args)
