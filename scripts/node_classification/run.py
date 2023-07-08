@@ -67,8 +67,6 @@ def run(args):
         gamma=args.gamma,
         node_recover_scale=args.node_recover_scale,
         edge_recover_scale=args.edge_recover_scale,
-        dropout_in=args.dropout_in,
-        dropout_out=args.dropout_out,
     )
 
     if torch.cuda.is_available():
@@ -128,6 +126,8 @@ def run(args):
             scheduler.step(accuracy)
             accuracies.append(accuracy)
 
+            print(accuracy, loss, flush=True)
+
             if args.test:
                 y_hat = predictive(
                     g, g.ndata["feat"], mask=g.ndata["test_mask"]
@@ -137,6 +137,7 @@ def run(args):
                     y_hat
                 )
                 accuracies_te.append(accuracy)
+
 
             lr = next(iter(scheduler.get_state().values()))["optimizer"][
                 "param_groups"
@@ -164,7 +165,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--num_samples", type=int, default=32)
@@ -176,9 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--node_recover_scale", type=float, default=1e-5)
     parser.add_argument("--edge_recover_scale", type=float, default=1e-5)
-    parser.add_argument("--kl_scale", type=float, default=1.0)
-    parser.add_argument("--dropout_in", type=float, default=0.0)
-    parser.add_argument("--dropout_out", type=float, default=0.0)
+    parser.add_argument("--kl_scale", type=float, default=1e-3)
     parser.add_argument("--test", type=int, default=0)
     args = parser.parse_args()
     run(args)

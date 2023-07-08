@@ -43,8 +43,6 @@ def experiment(args):
         "node_recover_scale": tune.loguniform(1e-5, 1e-3),
         "edge_recover_scale": tune.loguniform(1e-5, 1e-3),
         "kl_scale": tune.loguniform(1e-6, 1e-3),
-        "dropout_in": tune.uniform(0.0, 0.5),
-        "dropout_out": tune.uniform(0.0, 0.5),
         "test": tune.choice([0]),
     }
 
