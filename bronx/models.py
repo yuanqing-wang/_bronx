@@ -3,6 +3,7 @@ import dgl
 import pyro
 from pyro import poutine
 from .layers import BronxLayer, NodeRecover, EdgeRecover
+from dgl.nn.pytorch import GraphConv
 
 class BronxModel(pyro.nn.PyroModule):
     def __init__(
@@ -23,8 +24,14 @@ class BronxModel(pyro.nn.PyroModule):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
-        self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
+        self.fc_in = torch.nn.Sequential(
+            torch.nn.Dropout(dropout_in),
+            torch.nn.Linear(in_features, hidden_features, bias=False),
+        )
+        self.fc_out = torch.nn.Sequential(
+            torch.nn.Dropout(dropout_out),
+            torch.nn.Linear(depth * hidden_features, out_features, bias=False),
+        )
 
         self.activation = activation
         self.depth = depth
@@ -38,10 +45,14 @@ class BronxModel(pyro.nn.PyroModule):
                 num_heads=num_heads,
                 sigma_factor=sigma_factor,
                 kl_scale=kl_scale,
-                t=t,
+                t=t/depth,
                 gamma=gamma,
             )
             
+            if idx > 0:
+                layer.fc_mu = self.layer0.fc_mu
+                layer.fc_log_sigma = self.layer0.fc_log_sigma
+
             setattr(
                 self,
                 f"layer{idx}",
@@ -55,25 +66,28 @@ class BronxModel(pyro.nn.PyroModule):
             hidden_features, embedding_features, scale=edge_recover_scale,
         )
 
-    def guide(self, g, h, kl_anneal=1.0, *args, **kwargs):
+    def guide(self, g, h, *args, **kwargs):
+        g = g.local_var()
         h = self.fc_in(h)
-        h = self.activation(h)
 
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}").guide(g, h, kl_anneal=kl_anneal)
+            h = getattr(self, f"layer{idx}").guide(g, h)
         return h
 
-    def forward(self, g, h, kl_anneal=1.0, *args, **kwargs):
+    def forward(self, g, h, *args, **kwargs):
+        g = g.local_var()
         h0 = h
         h = self.fc_in(h)
-        h = self.activation(h)
-
+        hs = []
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h, kl_anneal=kl_anneal)
+            h = getattr(self, f"layer{idx}")(g, h)
+            hs.append(h)
         
+        self.node_recover(g, self.activation(h), h0)
+        self.edge_recover(g, self.activation(h))
+
+        h = torch.cat(hs, dim=-1)
         h = self.activation(h)
-        self.node_recover(g, h, h0)
-        self.edge_recover(g, h)
         h = self.fc_out(h)
         return h
 
@@ -81,8 +95,8 @@ class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def forward(self, g, h, kl_anneal=1.0, y=None, mask=None):
-        h = super().forward(g, h, kl_anneal=kl_anneal)
+    def forward(self, g, h, y=None, mask=None):
+        h = super().forward(g, h, )
         h = h.softmax(-1)
         if mask is not None:
             h = h[..., mask, :]
