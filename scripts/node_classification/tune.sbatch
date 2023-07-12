@@ -5,4 +5,4 @@
 #SBATCH --output=%A.out
 #SBATCH --gres=gpu:v100:1
 
-python tune.py
+python tune.py --data CiteseerGraphDataset

@@ -67,8 +67,7 @@ def run(args):
         gamma=args.gamma,
         node_recover_scale=args.node_recover_scale,
         edge_recover_scale=args.edge_recover_scale,
-        dropout_in=args.dropout_in,
-        dropout_out=args.dropout_out,
+        alpha=args.alpha,
     )
  
     if torch.cuda.is_available():
@@ -76,24 +75,27 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = getattr(torch.optim, args.optimizer)
-    scheduler = pyro.optim.ReduceLROnPlateau(
-        {
-            "optimizer": optimizer,
-            "optim_args": {
-                "lr": args.learning_rate,
-                "weight_decay": args.weight_decay,
-            },
-            "patience": args.patience,
-            "factor": args.factor,
-            "mode": "max",
-        }
+    optimizer = getattr(pyro.optim, args.optimizer)(
+        {"lr": args.learning_rate, "weight_decay": args.weight_decay}
     )
+    
+    # scheduler = pyro.optim.ReduceLROnPlateau(
+    #     {
+    #         "optimizer": optimizer,
+    #         "optim_args": {
+    #             "lr": args.learning_rate,
+    #             "weight_decay": args.weight_decay,
+    #         },
+    #         "patience": args.patience,
+    #         "factor": args.factor,
+    #         "mode": "max",
+    #     }
+    # )
 
     svi = pyro.infer.SVI(
         model,
         model.guide,
-        scheduler,
+        optimizer,
         loss=pyro.infer.TraceMeanField_ELBO(
             num_particles=args.num_particles, vectorize_particles=True
         ),
@@ -101,7 +103,7 @@ def run(args):
 
     accuracies = []
     accuracies_te = []
-    for idx in range(1000):
+    for idx in range(50):
         # kl_anneal = anneal_schedule(idx, 50)
         model.train()
         loss = svi.step(
@@ -125,7 +127,7 @@ def run(args):
             accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
-            scheduler.step(accuracy)
+            # scheduler.step(accuracy)
             accuracies.append(accuracy)
 
             # print(accuracy, loss, flush=True)
@@ -141,12 +143,12 @@ def run(args):
                 accuracies_te.append(accuracy)
 
 
-            lr = next(iter(scheduler.get_state().values()))["optimizer"][
-                "param_groups"
-            ][0]["lr"]
+            # lr = next(iter(scheduler.get_state().values()))["optimizer"][
+            #     "param_groups"
+            # ][0]["lr"]
 
-            if lr <= 1e-6:
-                break
+            # if lr <= 1e-6:
+            #     break
 
     if args.test:
         accuracies = np.array(accuracies)
@@ -168,8 +170,6 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--depth", type=int, default=3)
-    parser.add_argument("--patience", type=int, default=5)
-    parser.add_argument("--factor", type=float, default=0.5)
     parser.add_argument("--num_samples", type=int, default=32)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=8)
@@ -180,8 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--node_recover_scale", type=float, default=1e-2)
     parser.add_argument("--edge_recover_scale", type=float, default=1e-2)
     parser.add_argument("--kl_scale", type=float, default=1e-3)
-    parser.add_argument("--dropout_in", type=float, default=0.0)
-    parser.add_argument("--dropout_out", type=float, default=0.0)
+    parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--test", type=int, default=0)
     args = parser.parse_args()
     run(args)

@@ -1,3 +1,4 @@
+import math
 import torch
 import dgl
 import pyro
@@ -18,20 +19,14 @@ class BronxModel(pyro.nn.PyroModule):
             gamma=1.0,
             edge_recover_scale=1e-5,
             node_recover_scale=1e-5,
-            dropout_in=0.0,
-            dropout_out=0.0,
+            alpha=0.1,
         ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
-        self.fc_in = torch.nn.Sequential(
-            torch.nn.Dropout(dropout_in),
-            torch.nn.Linear(in_features, hidden_features, bias=False),
-        )
-        self.fc_out = torch.nn.Sequential(
-            torch.nn.Dropout(dropout_out),
-            torch.nn.Linear(depth * hidden_features, out_features, bias=False),
-        )
+        self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.fc_out = torch.nn.Linear(depth * hidden_features, out_features, bias=False)
+        self.alpha = alpha
 
         self.activation = activation
         self.depth = depth
@@ -70,14 +65,36 @@ class BronxModel(pyro.nn.PyroModule):
         g = g.local_var()
         h = self.fc_in(h)
 
+        epsilon = pyro.sample(
+            "epsilon_in",
+            pyro.distributions.Normal(
+                torch.ones(h.shape[-1], device=h.device), 
+                self.alpha * torch.ones(h.shape[-1], device=h.device),
+            ).to_event(1)
+        )
+
+        h = h * epsilon
+
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
+
         return h
 
     def forward(self, g, h, *args, **kwargs):
         g = g.local_var()
         h0 = h
         h = self.fc_in(h)
+
+        epsilon = pyro.sample(
+            "epsilon_in",
+            pyro.distributions.Normal(
+                torch.ones(h.shape[-1], device=h.device), 
+                self.alpha * torch.ones(h.shape[-1], device=h.device),
+            ).to_event(1)
+        )
+
+        h = h * epsilon
+
         hs = []
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)

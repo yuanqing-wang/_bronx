@@ -32,8 +32,6 @@ def experiment(args):
         "depth": tune.randint(2, 5),
         "learning_rate": tune.loguniform(1e-3, 1e-2),
         "weight_decay": tune.loguniform(1e-5, 1e-3),
-        "patience": tune.randint(5, 10),
-        "factor": tune.uniform(0.1, 0.9),
         "num_samples": tune.choice([16]),
         "num_particles": tune.choice([16]),
         "sigma_factor": tune.uniform(0.5, 10.0),
@@ -43,8 +41,7 @@ def experiment(args):
         "node_recover_scale": tune.loguniform(1e-5, 1e-2),
         "edge_recover_scale": tune.loguniform(1e-5, 1e-2),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
-        "dropout_in": tune.uniform(0.0, 0.5),
-        "dropout_out": tune.uniform(0.0, 0.5),
+        "alpha": tune.uniform(0.1, 1.0),
         "test": tune.choice([0]),
     }
 
@@ -52,7 +49,7 @@ def experiment(args):
         metric="_metric/accuracy",
         mode="max",
         search_alg=AxSearch(),
-        num_samples=200,
+        num_samples=1000,
     )
 
     run_config = air.RunConfig(
