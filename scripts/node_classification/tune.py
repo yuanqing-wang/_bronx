@@ -29,7 +29,7 @@ def experiment(args):
         "hidden_features": tune.randint(4, 32),
         "embedding_features": tune.randint(4, 32),
         "num_heads": tune.randint(4, 32),
-        "depth": tune.randint(2, 5),
+        "depth": tune.randint(2, 8),
         "learning_rate": tune.loguniform(1e-3, 1e-2),
         "weight_decay": tune.loguniform(1e-5, 1e-3),
         "num_samples": tune.choice([16]),
@@ -42,6 +42,7 @@ def experiment(args):
         "edge_recover_scale": tune.loguniform(1e-5, 1e-2),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
         "alpha": tune.uniform(0.1, 1.0),
+        "beta": tune.uniform(0.1, 1.0),
         "test": tune.choice([0]),
     }
 
