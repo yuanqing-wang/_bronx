@@ -67,7 +67,6 @@ def run(args):
         gamma=args.gamma,
         edge_recover_scale=args.edge_recover_scale,
         alpha=args.alpha,
-        beta=args.beta,
     )
  
     if torch.cuda.is_available():
@@ -130,7 +129,7 @@ def run(args):
             # scheduler.step(accuracy)
             accuracies.append(accuracy)
 
-            # print(accuracy, loss, flush=True)
+            print(accuracy, loss, flush=True)
 
             if args.test:
                 y_hat = predictive(
@@ -169,18 +168,17 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=5)
-    parser.add_argument("--num_samples", type=int, default=16)
-    parser.add_argument("--num_particles", type=int, default=32)
+    parser.add_argument("--depth", type=int, default=10)
+    parser.add_argument("--num_samples", type=int, default=64)
+    parser.add_argument("--num_particles", type=int, default=64)
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--sigma_factor", type=float, default=5.0)
-    parser.add_argument("--t", type=float, default=5.0)
+    parser.add_argument("--t", type=float, default=10.0)
     parser.add_argument("--gamma", type=float, default=-1.0)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
-    parser.add_argument("--edge_recover_scale", type=float, default=1e-5)
+    parser.add_argument("--edge_recover_scale", type=float, default=1e-3)
     parser.add_argument("--kl_scale", type=float, default=1e-3)
     parser.add_argument("--alpha", type=float, default=0.1)
-    parser.add_argument("--beta", type=float, default=1.0)
     parser.add_argument("--test", type=int, default=0)
     args = parser.parse_args()
     run(args)

@@ -19,7 +19,6 @@ class BronxModel(pyro.nn.PyroModule):
             gamma=1.0,
             edge_recover_scale=1e-5,
             alpha=0.1,
-            beta=1.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -27,7 +26,6 @@ class BronxModel(pyro.nn.PyroModule):
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_out = torch.nn.Linear(depth * hidden_features, out_features, bias=False)
         self.alpha = alpha
-        self.beta = beta
         self.log_alpha = torch.nn.Parameter(
             torch.ones(hidden_features) * math.log(alpha)
         )
@@ -67,7 +65,6 @@ class BronxModel(pyro.nn.PyroModule):
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)
-        x0 = h.tanh().detach() * self.beta
 
         with pyro.plate("nodes", g.number_of_nodes(), device=h.device):
             epsilon = pyro.sample(
@@ -81,7 +78,7 @@ class BronxModel(pyro.nn.PyroModule):
         h = h * epsilon
         
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}").guide(g, h, x0)
+            h = getattr(self, f"layer{idx}").guide(g, h)
 
         return h
 
@@ -89,7 +86,6 @@ class BronxModel(pyro.nn.PyroModule):
         g = g.local_var()
         h0 = h
         h = self.fc_in(h)
-        x0 = h.tanh().detach() * self.beta
 
         with pyro.plate("nodes", g.number_of_nodes(), device=h.device):
             epsilon = pyro.sample(
@@ -104,7 +100,7 @@ class BronxModel(pyro.nn.PyroModule):
         
         hs = []
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h, x0)
+            h = getattr(self, f"layer{idx}")(g, h)
             hs.append(h)
         
         self.edge_recover(g, self.activation(h))
