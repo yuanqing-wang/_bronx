@@ -102,7 +102,7 @@ def run(args):
 
     accuracies = []
     accuracies_te = []
-    for idx in range(50):
+    for idx in range(30):
         # kl_anneal = anneal_schedule(idx, 50)
         model.train()
         loss = svi.step(
@@ -129,7 +129,8 @@ def run(args):
             # scheduler.step(accuracy)
             accuracies.append(accuracy)
 
-            print(accuracy, loss, flush=True)
+            if __name__ == "__main__":
+                print(accuracy, loss, flush=True)
 
             if args.test:
                 y_hat = predictive(
@@ -176,9 +177,10 @@ if __name__ == "__main__":
     parser.add_argument("--t", type=float, default=10.0)
     parser.add_argument("--gamma", type=float, default=-1.0)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
-    parser.add_argument("--edge_recover_scale", type=float, default=1e-3)
+    parser.add_argument("--edge_recover_scale", type=float, default=1e-2)
+    parser.add_argument("--node_recover_scale", type=float, default=1e-2)
     parser.add_argument("--kl_scale", type=float, default=1e-3)
-    parser.add_argument("--alpha", type=float, default=0.1)
+    parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--test", type=int, default=0)
     args = parser.parse_args()
     run(args)

@@ -207,7 +207,7 @@ class NodeRecover(pyro.nn.PyroModule):
         h = torch.nn.functional.normalize(h, dim=-1)
         h = self.fc(h)
         with pyro.poutine.scale(None, self.scale):
-            with pyro.plate("nodes", g.number_of_nodes(), device=g.device):
+            with pyro.plate("nodes_recover", g.number_of_nodes(), device=g.device):
                 pyro.sample(
                     "node_recover",
                     pyro.distributions.Bernoulli(h.sigmoid()).to_event(1),

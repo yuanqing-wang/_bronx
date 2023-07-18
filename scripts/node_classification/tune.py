@@ -26,19 +26,20 @@ def experiment(args):
 
     param_space = {
         "data": tune.choice([args.data]),
-        "hidden_features": tune.randint(4, 32),
-        "embedding_features": tune.randint(4, 32),
+        "hidden_features": tune.randint(4, 16),
+        "embedding_features": tune.randint(4, 16),
         "num_heads": tune.randint(4, 32),
-        "depth": tune.randint(2, 10),
+        "depth": tune.randint(2, 15),
         "learning_rate": tune.loguniform(1e-4, 1e-2),
         "weight_decay": tune.loguniform(1e-5, 1e-3),
-        "num_samples": tune.choice([32]),
-        "num_particles": tune.choice([32]),
+        "num_samples": tune.choice([16]),
+        "num_particles": tune.choice([16]),
         "sigma_factor": tune.uniform(0.5, 10.0),
-        "t": tune.uniform(0.5, 10.0),
+        "t": tune.uniform(0.5, 15.0),
         "gamma": tune.choice([-1.0]),
         "optimizer": tune.choice(["RMSprop"]),
         "edge_recover_scale": tune.loguniform(1e-5, 1e-2),
+        "node_recover_scale": tune.loguniform(1e-5, 1e-2),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
         "alpha": tune.uniform(0.1, 1.0),
         "test": tune.choice([0]),
@@ -48,7 +49,7 @@ def experiment(args):
         metric="_metric/accuracy",
         mode="max",
         search_alg=AxSearch(),
-        num_samples=1000,
+        num_samples=500,
     )
 
     run_config = air.RunConfig(

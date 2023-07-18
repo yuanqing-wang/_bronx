@@ -18,13 +18,14 @@ class BronxModel(pyro.nn.PyroModule):
             t=1.0,
             gamma=1.0,
             edge_recover_scale=1e-5,
+            node_recover_scale=1e-5,
             alpha=0.1,
         ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(depth * hidden_features, out_features, bias=False)
+        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
         self.alpha = alpha
         self.log_alpha = torch.nn.Parameter(
             torch.ones(hidden_features) * math.log(alpha)
@@ -55,9 +56,9 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        # self.node_recover = NodeRecover(
-        #     hidden_features, in_features, scale=node_recover_scale,
-        # )
+        self.node_recover = NodeRecover(
+            hidden_features, in_features, scale=node_recover_scale,
+        )
         self.edge_recover = EdgeRecover(
             hidden_features, embedding_features, scale=edge_recover_scale,
         )
@@ -104,9 +105,11 @@ class BronxModel(pyro.nn.PyroModule):
             hs.append(h)
         
         self.edge_recover(g, self.activation(h))
+        self.node_recover(g, self.activation(h), h0)
 
-        h = torch.cat(hs, dim=-1)
+        h = torch.stack(hs, dim=-1)
         h = self.activation(h)
+        h = h.max(-1)[0]
         h = self.fc_out(h)
         return h
 
