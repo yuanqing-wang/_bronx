@@ -109,7 +109,8 @@ class BronxModel(pyro.nn.PyroModule):
 
         h = torch.stack(hs, dim=-1)
         h = self.activation(h)
-        h = h.max(-1)[0]
+        idxs = torch.randint(size=h.shape[:-1], high=h.shape[-1], device=h.device)
+        h = h.gather(-1, idxs.unsqueeze(-1)).squeeze(-1)
         h = self.fc_out(h)
         return h
 

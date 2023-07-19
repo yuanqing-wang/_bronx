@@ -11,7 +11,8 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-from torchdiffeq import odeint_adjoint as odeint
+# from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint
 
 class ODEFunc(torch.nn.Module):
     def __init__(self):

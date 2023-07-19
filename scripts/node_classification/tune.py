@@ -36,12 +36,16 @@ def experiment(args):
         "num_particles": tune.choice([16]),
         "sigma_factor": tune.uniform(0.5, 10.0),
         "t": tune.uniform(0.5, 15.0),
-        "gamma": tune.choice([-1.0]),
+        "gamma": tune.uniform(-1.0, 0.0),
         "optimizer": tune.choice(["RMSprop"]),
         "edge_recover_scale": tune.loguniform(1e-5, 1e-2),
         "node_recover_scale": tune.loguniform(1e-5, 1e-2),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
         "alpha": tune.uniform(0.1, 1.0),
+        "swa_start": tune.randint(10, 30),
+        "swa_lr": tune.loguniform(1e-4, 1e-2),
+        "swa_freq": tune.randint(5, 15),
+        "n_epochs": tune.randint(50, 100),
         "test": tune.choice([0]),
     }
 
