@@ -59,7 +59,7 @@ def experiment(args):
     run_config = air.RunConfig(
         verbose=0,
         name=name,
-        local_dir=args.data,
+        storage_path=args.data,
         stop={"time_total_s": 100},
     )
 
