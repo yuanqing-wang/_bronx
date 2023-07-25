@@ -99,18 +99,15 @@ class BronxModel(pyro.nn.PyroModule):
 
         h = h * epsilon
         
-        hs = []
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
-            hs.append(h)
         
-        self.edge_recover(g, self.activation(h))
-        self.node_recover(g, self.activation(h), h0)
-
-        h = torch.stack(hs, dim=-1)
         h = self.activation(h)
-        idxs = torch.randint(size=h.shape[:-1], high=h.shape[-1], device=h.device)
-        h = h.gather(-1, idxs.unsqueeze(-1)).squeeze(-1)
+        
+        self.edge_recover(g, h)
+        self.node_recover(g, h, h0)
+
+        h = self.activation(h)
         h = self.fc_out(h)
         return h
 
