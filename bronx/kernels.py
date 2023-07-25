@@ -1,6 +1,6 @@
 from functools import cache, partial
 from pyro.contrib.gp.kernels.kernel import Kernel
-from pyro.contrib.gp.util import conditional as _conditional
+# from pyro.contrib.gp.util import conditional as _conditional
 
 class GraphLinearDiffusion(Kernel):
     def __init__(self, input_dim, variance=None, active_dims=None):
@@ -21,9 +21,9 @@ class GraphLinearDiffusion(Kernel):
         variance = self.graph_exp(graph)
         return variance[X, Z]
 
-def conditional(graph, X_new, X, kernel, **kwargs):
-    kernel = partial(kernel, graph=graph)
-    return _conditional(X_new, X, kernel, **kwargs)
+# def conditional(graph, X_new, X, kernel, **kwargs):
+#     kernel = partial(kernel, graph=graph)
+#     return _conditional(X_new, X, kernel, **kwargs)
 
 
 

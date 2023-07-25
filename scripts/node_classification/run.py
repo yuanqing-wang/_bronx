@@ -5,9 +5,9 @@ from pyro import poutine
 import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
-from bronx.models import NodeClassificationBronxModel
-from bronx.utils import anneal_schedule
-from bronx.optim import SWA, swap_swa_sgd
+from pyro.contrib.gp.likelihoods.multi_class import MultiClass
+from bronx.kernels import GraphLinearDiffusion
+from bronx.models import GraphVariationalSparseGaussianProcess
 
 def run(args):
     pyro.clear_param_store()
@@ -55,20 +55,18 @@ def run(args):
         g.ndata["val_mask"][val_idxs] = True
         g.ndata["test_mask"][test_idxs] = True
 
-    model = NodeClassificationBronxModel(
-        in_features=g.ndata["feat"].shape[-1],
-        out_features=g.ndata["label"].shape[-1],
-        hidden_features=args.hidden_features,
-        embedding_features=args.embedding_features,
-        depth=args.depth,
-        num_heads=args.num_heads,
-        sigma_factor=args.sigma_factor,
-        kl_scale=args.kl_scale,
-        t=args.t,
-        gamma=args.gamma,
-        edge_recover_scale=args.edge_recover_scale,
-        alpha=args.alpha,
+    kernel = GraphLinearDiffusion(1)
+    Xu = torch.arange(g.number_of_nodes(), dtype=torch.int32)
+    likelihood = MultiClass(num_classes=g.ndata["label"].shape[-1])
+    model = GraphVariationalSparseGaussianProcess(
+        g, 
+        torch.where(g.ndata["train_mask"])[0], 
+        g.ndata["label"], 
+        kernel, 
+        Xu,
+        likelihood,
     )
+
  
     if torch.cuda.is_available():
         # a = a.cuda()
