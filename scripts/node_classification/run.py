@@ -8,6 +8,8 @@ dgl.use_libxsmm(False)
 from pyro.contrib.gp.likelihoods.multi_class import MultiClass
 from bronx.kernels import GraphLinearDiffusion
 from bronx.models import GraphVariationalSparseGaussianProcess
+from pyro.contrib.gp.models.vsgp import VariationalSparseGP
+from pyro.contrib.gp.kernels.dot_product import Linear
 
 def run(args):
     pyro.clear_param_store()
@@ -28,7 +30,6 @@ def run(args):
     src, dst = g.edges()
     eids = torch.where(src > dst)[0]
     g = dgl.remove_edges(g, eids)
-    g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
     if "train_mask" not in g.ndata:
         g.ndata["train_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
@@ -55,42 +56,56 @@ def run(args):
         g.ndata["val_mask"][val_idxs] = True
         g.ndata["test_mask"][test_idxs] = True
 
+    if torch.cuda.is_available():
+        g = g.to("cuda:0")
+
     kernel = GraphLinearDiffusion(1)
     Xu = torch.arange(g.number_of_nodes(), dtype=torch.int32)
-    likelihood = MultiClass(num_classes=g.ndata["label"].shape[-1])
+    likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
     model = GraphVariationalSparseGaussianProcess(
         g, 
         torch.where(g.ndata["train_mask"])[0], 
-        g.ndata["label"], 
+        g.ndata["label"][g.ndata["train_mask"]], 
         kernel, 
         Xu,
         likelihood,
+        latent_shape=(g.ndata["label"].max()+1,),
     )
 
- 
+    # kernel = Linear(g.ndata["feat"].shape[-1])
+    # Xu = g.ndata["feat"]
+    # likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
+    # model = VariationalSparseGP(
+    #     X=g.ndata["feat"],
+    #     y=g.ndata["label"],
+    #     kernel=kernel,
+    #     Xu=Xu,
+    #     likelihood=likelihood,
+    #     latent_shape=(g.ndata["label"].max()+1,),
+    # )
+
     if torch.cuda.is_available():
         # a = a.cuda()
         model = model.cuda()
-        g = g.to("cuda:0")
 
-    # optimizer = getattr(pyro.optim, args.optimizer)(
-    #     {"lr": args.learning_rate, "weight_decay": args.weight_decay}
-    # )
-
-    optimizer = SWA(
-        {
-            "base": getattr(torch.optim, args.optimizer),
-            "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "swa_args": {
-                "swa_start": args.swa_start, 
-                "swa_freq": args.swa_freq, 
-                "swa_lr": args.swa_lr,
-            },
-        }
+    optimizer = getattr(pyro.optim, args.optimizer)(
+        {"lr": args.learning_rate, "weight_decay": args.weight_decay}
     )
 
+    # optimizer = SWA(
+    #     {
+    #         "base": getattr(torch.optim, args.optimizer),
+    #         "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+    #         "swa_args": {
+    #             "swa_start": args.swa_start, 
+    #             "swa_freq": args.swa_freq, 
+    #             "swa_lr": args.swa_lr,
+    #         },
+    #     }
+    # )
+
     svi = pyro.infer.SVI(
-        model,
+        model.model,
         model.guide,
         optimizer,
         loss=pyro.infer.TraceMeanField_ELBO(
@@ -102,41 +117,8 @@ def run(args):
     accuracies_te = []
     for idx in range(args.n_epochs):
         model.train()
-        loss = svi.step(
-            g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
-        )
-
-    model.eval()
-    swap_swa_sgd(svi.optim)
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
-
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
-
-        if args.test:
-            y_hat = predictive(
-                g, g.ndata["feat"], mask=g.ndata["test_mask"]
-            )["_RETURN"].mean(0)
-            y = g.ndata["label"][g.ndata["test_mask"]]
-            accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-                y_hat
-            )
-
-            print(accuracy_vl, accuracy_te, flush=True)
-            return accuracy_vl, accuracy_te
-        return accuracy_vl
+        loss = svi.step()
+        print(loss, flush=True)
 
 if __name__ == "__main__":
     import argparse
