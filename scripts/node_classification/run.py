@@ -6,8 +6,8 @@ import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
 from pyro.contrib.gp.likelihoods.multi_class import MultiClass
-from bronx.kernels import GraphLinearDiffusion
-from bronx.models import GraphVariationalSparseGaussianProcess
+from bronx.kernels import CombinedGraphDiffusion
+from bronx.models import GraphVariationalSparseGaussianProcess as GVSGP
 from pyro.contrib.gp.models.vsgp import VariationalSparseGP
 from pyro.contrib.gp.kernels.dot_product import Linear
 
@@ -59,16 +59,22 @@ def run(args):
     if torch.cuda.is_available():
         g = g.to("cuda:0")
 
-    kernel = GraphLinearDiffusion(1)
-    Xu = torch.arange(g.number_of_nodes(), dtype=torch.int32)
     likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
-    model = GraphVariationalSparseGaussianProcess(
-        g, 
-        torch.where(g.ndata["train_mask"])[0], 
-        g.ndata["label"][g.ndata["train_mask"]], 
-        kernel, 
-        Xu,
-        likelihood,
+    from pyro.contrib.gp.kernels import Linear
+    base_kernel = Linear(g.ndata["feat"].shape[-1])
+    kernel = CombinedGraphDiffusion(
+        g.ndata["feat"].shape[-1], base_kernel=base_kernel,
+    )
+
+    model = GVSGP(
+        graph=g,
+        X=g.ndata["feat"][g.ndata["train_mask"]],
+        y=g.ndata["label"][g.ndata["train_mask"]],
+        iX=torch.where(g.ndata["train_mask"])[0],
+        Xu=g.ndata["feat"],
+        iXu=g.nodes(),
+        kernel=kernel,
+        likelihood=likelihood,
         latent_shape=(g.ndata["label"].max()+1,),
     )
 
@@ -90,10 +96,15 @@ def run(args):
         loss.backward()
         optimizer.step()
 
-        mean, cov = model(torch.where(g.ndata["val_mask"])[0])
-        # y_hat = pyro.distributions.Normal(mean, cov).sample().argmax(0)
+        mean, cov = model(
+            X=g.ndata["feat"][g.ndata["train_mask"]],
+            iX=torch.where(g.ndata["train_mask"])[0]
+        )
+
+        print(mean)
+
         y_hat = mean.argmax(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
+        y = g.ndata["label"][g.ndata["train_mask"]]
         accuracy = (y == y_hat).sum() / y_hat.shape[0]
         print(loss.item(), accuracy)
 

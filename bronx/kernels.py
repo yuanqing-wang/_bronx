@@ -48,10 +48,9 @@ class CombinedGraphDiffusion(Kernel):
             Z = X
         if iZ is None:
             iZ = iX
-
         variance = self.graph_diffusion_kernel(graph, iX, iZ, diag)
         if self.base_kernel is not None:
-            variance = variance * self.base_kernel(X, Z, diag)
+            base_variance = self.base_kernel(X, Z, diag)
         return variance
 
     
