@@ -3,8 +3,6 @@ import torch
 from pyro.contrib.gp.kernels.kernel import Kernel
 # from pyro.contrib.gp.util import conditional as _conditional
 
-
-
 class GraphLinearDiffusion(Kernel):
     def __init__(self, input_dim, variance=None, active_dims=None):
         super().__init__(input_dim, active_dims)
@@ -18,14 +16,14 @@ class GraphLinearDiffusion(Kernel):
         )
         src, dst = graph.edges()
         a[src, dst] = 1
-        d = a.sum(-1, keepdims=True)
+        d = a.sum(-1, keepdims=True).clamp(min=1)
         a = a / d
         a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
         a = torch.linalg.matrix_exp(a)
         return a
 
     @lru_cache(maxsize=8)
-    def forward(self, X, Z=None, graph=None, diag=False):
+    def forward(self, graph, X, Z=None, diag=False):
         if Z is None:
             Z = X
         variance = self.graph_exp(graph)
@@ -34,10 +32,29 @@ class GraphLinearDiffusion(Kernel):
             variance = variance.diag()
         return variance
 
-# def conditional(graph, X_new, X, kernel, **kwargs):
-#     kernel = partial(kernel, graph=graph)
-#     return _conditional(X_new, X, kernel, **kwargs)
+class CombinedGraphDiffusion(Kernel):
+    def __init__(
+            self, input_dim, variance=None, active_dims=None, 
+            base_kernel=None,
+        ):
+        super().__init__(input_dim, active_dims)
+        self.graph_diffusion_kernel = GraphLinearDiffusion(input_dim)
+        self.base_kernel = base_kernel
 
+    def forward(self, X, Z=None, graph=None, iX=None, iZ=None, diag=False):
+        assert graph is not None
+        assert iX is not None
+        if Z is None:
+            Z = X
+        if iZ is None:
+            iZ = iX
+
+        variance = self.graph_diffusion_kernel(graph, iX, iZ, diag)
+        if self.base_kernel is not None:
+            variance = variance * self.base_kernel(X, Z, diag)
+        return variance
+
+    
 
 
 

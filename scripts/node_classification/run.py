@@ -72,53 +72,30 @@ def run(args):
         latent_shape=(g.ndata["label"].max()+1,),
     )
 
-    # kernel = Linear(g.ndata["feat"].shape[-1])
-    # Xu = g.ndata["feat"]
-    # likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
-    # model = VariationalSparseGP(
-    #     X=g.ndata["feat"],
-    #     y=g.ndata["label"],
-    #     kernel=kernel,
-    #     Xu=Xu,
-    #     likelihood=likelihood,
-    #     latent_shape=(g.ndata["label"].max()+1,),
-    # )
-
     if torch.cuda.is_available():
         # a = a.cuda()
         model = model.cuda()
 
-    optimizer = getattr(pyro.optim, args.optimizer)(
-        {"lr": args.learning_rate, "weight_decay": args.weight_decay}
+    optimizer = getattr(torch.optim, args.optimizer)(
+        model.parameters(), 
+        lr=args.learning_rate, weight_decay=args.weight_decay,
     )
 
-    # optimizer = SWA(
-    #     {
-    #         "base": getattr(torch.optim, args.optimizer),
-    #         "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-    #         "swa_args": {
-    #             "swa_start": args.swa_start, 
-    #             "swa_freq": args.swa_freq, 
-    #             "swa_lr": args.swa_lr,
-    #         },
-    #     }
-    # )
-
-    svi = pyro.infer.SVI(
-        model.model,
-        model.guide,
-        optimizer,
-        loss=pyro.infer.TraceMeanField_ELBO(
-            num_particles=args.num_particles, vectorize_particles=True
-        ),
-    )
-
-    accuracies = []
-    accuracies_te = []
+    loss_fn = pyro.infer.TraceMeanField_ELBO().differentiable_loss
+    
     for idx in range(args.n_epochs):
         model.train()
-        loss = svi.step()
-        print(loss, flush=True)
+        optimizer.zero_grad()
+        loss = loss_fn(model.model, model.guide)
+        loss.backward()
+        optimizer.step()
+
+        mean, cov = model(torch.where(g.ndata["val_mask"])[0])
+        # y_hat = pyro.distributions.Normal(mean, cov).sample().argmax(0)
+        y_hat = mean.argmax(0)
+        y = g.ndata["label"][g.ndata["val_mask"]]
+        accuracy = (y == y_hat).sum() / y_hat.shape[0]
+        print(loss.item(), accuracy)
 
 if __name__ == "__main__":
     import argparse
