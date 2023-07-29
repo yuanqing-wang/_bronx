@@ -1,4 +1,4 @@
-from functools import partial
+from functools import partial, lru_cache
 import math
 import torch
 import dgl
@@ -18,6 +18,7 @@ from pyro import distributions as dist
 #         del self.Xu
 #         self.register_buffer("Xu", Xu)
 
+
 def graph_conditional(
     Xnew,
     X,
@@ -32,8 +33,10 @@ def graph_conditional(
     whiten=False,
     jitter=1e-6,
 ):
-    N = X.size(0)
-    M = Xnew.size(0)
+    # N = X.size(0)
+    # M = Xnew.size(0)
+    N = len(iX)
+    M = len(iXnew)
     latent_shape = f_loc.shape[:-1]
 
     if Lff is None:
@@ -41,7 +44,6 @@ def graph_conditional(
         Kff.view(-1)[:: N + 1] += jitter  # add jitter to diagonal
         Lff = torch.linalg.cholesky(Kff)
     Kfs = kernel(X, Xnew, graph=graph, iX=iX, iZ=iXnew)
-
     # convert f_loc_shape from latent_shape x N to N x latent_shape
     f_loc = f_loc.permute(-1, *range(len(latent_shape)))
     # convert f_loc to 2D tensor for packing
@@ -81,10 +83,11 @@ def graph_conditional(
         Qssdiag = W.pow(2).sum(dim=-1)
         # Theoretically, Kss - Qss is non-negative; but due to numerical
         # computation, that might not be the case in practice.
+
         var = (Kssdiag - Qssdiag).clamp(min=0)
 
     if f_scale_tril is not None:
-        W_S_shape = (Xnew.size(0),) + f_scale_tril.shape[1:]
+        W_S_shape = (M,) + f_scale_tril.shape[1:]
         W_S = W.matmul(S_2D).reshape(W_S_shape)
         # convert W_S_shape from M x N x latent_shape to latent_shape x M x N
         W_S = W_S.permute(list(range(2, W_S.dim())) + [0, 1])
@@ -116,6 +119,7 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         iXu,
         kernel, 
         likelihood, 
+        hidden_features,
         latent_shape=None,
         jitter=1e-6,
     ):
@@ -130,14 +134,34 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         )
         self.graph = graph
         self.num_inducing_points = len(iXu)
+        del self.Xu
+        self.register_buffer("Xu", Xu)
         self.register_buffer("iX", iX)
         self.register_buffer("iXu", iXu)
+        self.W = torch.nn.Parameter(
+            torch.empty(X.shape[-1], hidden_features),
+        )
+        torch.nn.init.xavier_normal_(self.W)
+
+        self.W_mean = torch.nn.Parameter(
+            torch.empty(X.shape[-1], *latent_shape),
+        )
+        torch.nn.init.xavier_normal_(self.W_mean)
+
+    def set_data(self, X, y):
+        self.X = X
+        self.y = y
 
     @pyro_method
     def model(self):
         self.set_mode("model")
         Kuu = self.kernel(
-            self.Xu, self.Xu, self.graph, self.iXu, self.iXu).contiguous()
+            self.Xu@self.W, 
+            self.Xu@self.W, 
+            self.graph, 
+            self.iXu, 
+            self.iXu,
+        ).contiguous()
         Kuu.view(-1)[:: self.num_inducing_points + 1] += self.jitter
         Luu = torch.linalg.cholesky(Kuu)
         zero_loc = self.Xu.new_zeros(self.u_loc.shape)
@@ -148,27 +172,27 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             ),
         )
         f_loc, f_var = graph_conditional(
-            Xnew=self.X, 
-            X=self.Xu,
+            Xnew=self.X@self.W, 
+            X=self.Xu@self.W,
             graph=self.graph,
             iXnew=self.iX,
             iX=self.iXu,
             kernel=self.kernel, 
             f_loc=self.u_loc, 
             f_scale_tril=self.u_scale_tril, 
-            Lff=Luu,
             full_cov=False, 
             jitter=self.jitter, 
         )
         self.likelihood._load_pyro_samples()
+        # f_loc = f_loc + (self.X[self.iX, :] @ self.W_mean).T
         return self.likelihood(f_loc, f_var, self.y)
 
     def forward(self, X, iX, full_cov=False):
         self._check_Xnew_shape(X)
         self.set_mode("guide")
         loc, cov = graph_conditional(
-            Xnew=X,
-            X=self.Xu,
+            Xnew=X@self.W,
+            X=self.Xu@self.W,
             graph=self.graph,
             iXnew=iX,
             iX=self.iXu,
@@ -178,6 +202,7 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             full_cov=full_cov,
             jitter=self.jitter,
         )
+        # loc = loc + (X[iX, :] @ self.W_mean).T
         return loc, cov
         
 

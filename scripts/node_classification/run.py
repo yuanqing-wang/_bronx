@@ -60,22 +60,24 @@ def run(args):
         g = g.to("cuda:0")
 
     likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
-    from pyro.contrib.gp.kernels import Linear
-    base_kernel = Linear(g.ndata["feat"].shape[-1])
+    from pyro.contrib.gp.kernels import Linear, RBF
+    base_kernel = RBF(args.hidden_features)
     kernel = CombinedGraphDiffusion(
-        g.ndata["feat"].shape[-1], base_kernel=base_kernel,
+        args.hidden_features, base_kernel=base_kernel,
     )
 
     model = GVSGP(
         graph=g,
-        X=g.ndata["feat"][g.ndata["train_mask"]],
+        X=g.ndata["feat"],
         y=g.ndata["label"][g.ndata["train_mask"]],
         iX=torch.where(g.ndata["train_mask"])[0],
         Xu=g.ndata["feat"],
         iXu=g.nodes(),
+        hidden_features=args.hidden_features,
         kernel=kernel,
         likelihood=likelihood,
         latent_shape=(g.ndata["label"].max()+1,),
+        jitter=1e-2,
     )
 
     if torch.cuda.is_available():
@@ -97,14 +99,12 @@ def run(args):
         optimizer.step()
 
         mean, cov = model(
-            X=g.ndata["feat"][g.ndata["train_mask"]],
-            iX=torch.where(g.ndata["train_mask"])[0]
+            X=g.ndata["feat"],
+            iX=torch.where(g.ndata["val_mask"])[0]
         )
 
-        print(mean)
-
         y_hat = mean.argmax(0)
-        y = g.ndata["label"][g.ndata["train_mask"]]
+        y = g.ndata["label"][g.ndata["val_mask"]]
         accuracy = (y == y_hat).sum() / y_hat.shape[0]
         print(loss.item(), accuracy)
 
@@ -114,24 +114,10 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--embedding_features", type=int, default=64)
-    parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=10)
-    parser.add_argument("--num_samples", type=int, default=32)
-    parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--num_heads", type=int, default=8)
-    parser.add_argument("--sigma_factor", type=float, default=10.0)
-    parser.add_argument("--t", type=float, default=5.0)
-    parser.add_argument("--gamma", type=float, default=-1.0)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
-    parser.add_argument("--edge_recover_scale", type=float, default=1e-2)
-    parser.add_argument("--node_recover_scale", type=float, default=1e-2)
-    parser.add_argument("--kl_scale", type=float, default=1e-3)
-    parser.add_argument("--alpha", type=float, default=0.2)
-    parser.add_argument("--swa_start", type=int, default=20)
-    parser.add_argument("--swa_freq", type=int, default=10)
-    parser.add_argument("--swa_lr", type=float, default=1e-2)
-    parser.add_argument("--n_epochs", type=int, default=100)
+    parser.add_argument("--n_epochs", type=int, default=5000)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()
     run(args)
