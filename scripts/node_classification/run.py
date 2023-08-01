@@ -1,18 +1,17 @@
 import numpy as np
 import torch
-import pyro
-from pyro import poutine
+import gpytorch
+gpytorch.settings.debug._default = False
+gpytorch.settings.lazily_evaluate_kernels._default = False
+import linear_operator
+linear_operator.settings.cholesky_jitter._global_float_value = 1e-4
+linear_operator.settings.cholesky_jitter._global_double_value = 1e-4
+
 import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
-from pyro.contrib.gp.likelihoods.multi_class import MultiClass
-from bronx.kernels import CombinedGraphDiffusion
-from bronx.models import GraphVariationalSparseGaussianProcess as GVSGP
-from pyro.contrib.gp.models.vsgp import VariationalSparseGP
-from pyro.contrib.gp.kernels.dot_product import Linear
 
 def run(args):
-    pyro.clear_param_store()
     torch.cuda.empty_cache()
     from dgl.data import (
         CoraGraphDataset,
@@ -56,57 +55,53 @@ def run(args):
         g.ndata["val_mask"][val_idxs] = True
         g.ndata["test_mask"][test_idxs] = True
 
+    from bronx.models import BronxModel
+    model = BronxModel(
+        inducing_points=g.ndata["feat"],
+        inducing_indices=g.nodes(),
+        graph=g,
+        batch_shape=torch.Size([g.ndata["label"].max() + 1]),
+    )
+
+    likelihood = gpytorch.likelihoods.SoftmaxLikelihood(
+        num_features=g.ndata["label"].max() + 1,
+        num_classes=g.ndata["label"].max() + 1,
+        mixing_weights=False,
+    )
+
     if torch.cuda.is_available():
         g = g.to("cuda:0")
+        model = model.to("cuda:0")
+        likelihood = likelihood.cuda()
 
-    likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
-    from pyro.contrib.gp.kernels import Linear, RBF
-    base_kernel = RBF(args.hidden_features)
-    kernel = CombinedGraphDiffusion(
-        args.hidden_features, base_kernel=base_kernel,
+    mll = gpytorch.mlls.VariationalELBO(
+        likelihood, model, num_data=g.number_of_nodes()
     )
 
-    model = GVSGP(
-        graph=g,
-        X=g.ndata["feat"],
-        y=g.ndata["label"][g.ndata["train_mask"]],
-        iX=torch.where(g.ndata["train_mask"])[0],
-        Xu=g.ndata["feat"],
-        iXu=g.nodes(),
-        hidden_features=args.hidden_features,
-        kernel=kernel,
-        likelihood=likelihood,
-        latent_shape=(g.ndata["label"].max()+1,),
-        jitter=1e-2,
-    )
-
-    if torch.cuda.is_available():
-        # a = a.cuda()
-        model = model.cuda()
-
-    optimizer = getattr(torch.optim, args.optimizer)(
-        model.parameters(), 
-        lr=args.learning_rate, weight_decay=args.weight_decay,
-    )
-
-    loss_fn = pyro.infer.TraceMeanField_ELBO().differentiable_loss
+    optimizer = getattr(
+        torch.optim, args.optimizer
+    )(list(model.parameters()) + list(likelihood.parameters()), lr=args.learning_rate)
     
+    model.train()
+    likelihood.train()
+
     for idx in range(args.n_epochs):
-        model.train()
         optimizer.zero_grad()
-        loss = loss_fn(model.model, model.guide)
+        output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["train_mask"])[0])
+        loss = -mll(output, g.ndata["label"][g.ndata["train_mask"]])
+        loss = loss.sum()
         loss.backward()
         optimizer.step()
 
-        mean, cov = model(
-            X=g.ndata["feat"],
-            iX=torch.where(g.ndata["val_mask"])[0]
-        )
+        with torch.no_grad():
+            model.eval()
+            likelihood.eval()
+            output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["val_mask"])[0])
+            marginal = likelihood(output)
+            y_hat = marginal.probs.argmax(dim=-1)
+            accuracy = (y_hat == g.ndata["label"][g.ndata["val_mask"]]).float().mean()
+            print(accuracy)
 
-        y_hat = mean.argmax(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy = (y == y_hat).sum() / y_hat.shape[0]
-        print(loss.item(), accuracy)
 
 if __name__ == "__main__":
     import argparse
