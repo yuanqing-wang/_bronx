@@ -117,7 +117,6 @@ class GraphVariationalStrategy(VariationalStrategy):
             interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)
         ).squeeze(-1) + test_mean
 
-
         # Compute the covariance of q(f)
         # K_XX + k_XZ K_ZZ^{-1/2} (S - I) K_ZZ^{-1/2} k_ZX
         middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1)

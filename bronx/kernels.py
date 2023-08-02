@@ -6,7 +6,6 @@ from gpytorch.kernels.kernel import Kernel
 import linear_operator
 from dgl import DGLGraph
 
-
 class CombinedGraphDiffusion(Kernel):
     def __init__(self, base_kernel: Kernel):
         super().__init__()
@@ -25,7 +24,7 @@ class CombinedGraphDiffusion(Kernel):
         a[src, dst] = 1
         d = a.sum(-1, keepdims=True).clamp(min=1)
         a = a / d
-        a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+        # a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
         a = torch.linalg.matrix_exp(a)
         return a
 
@@ -45,7 +44,6 @@ class CombinedGraphDiffusion(Kernel):
         if ix2 is None:
             ix2 = ix1
 
-
         variance = self.base_kernel(
             x1,
             x2,
@@ -53,10 +51,10 @@ class CombinedGraphDiffusion(Kernel):
             last_dim_is_batch=last_dim_is_batch,
             **params,
         )
-
+     
         a = self.graph_exp(graph)
         variance = a @ variance @ a.transpose(-1, -2)
-
+        
         if diagonal:
             variance = variance[ix1.long()]
         else:

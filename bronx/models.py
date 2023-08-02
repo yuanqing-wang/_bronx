@@ -3,7 +3,7 @@ import dgl
 import gpytorch
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
-from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.kernels import ScaleKernel, RBFKernel, LinearKernel
 from .kernels import CombinedGraphDiffusion
 from .variational import GraphVariationalStrategy
 
@@ -13,11 +13,12 @@ class BronxModel(ApproximateGP):
             inducing_points: torch.Tensor,
             inducing_indices: torch.Tensor,
             graph: dgl.DGLGraph,
-            batch_shape: torch.Size = torch.Size(),
             hidden_features: int = 32,
+            embedding_features: int = 32,
             learn_inducing_locations: bool = False,
     ):
 
+        batch_shape = torch.Size([hidden_features])
         variational_distribution = CholeskyVariationalDistribution(
             inducing_points.size(-2),
             batch_shape=batch_shape,
@@ -32,18 +33,19 @@ class BronxModel(ApproximateGP):
             learn_inducing_locations=learn_inducing_locations,
         )
 
-        variational_strategy = gpytorch.variational.IndependentMultitaskVariationalStrategy(
-            variational_strategy,
-            num_tasks=batch_shape[0],
-        )
+        # variational_strategy = gpytorch.variational.IndependentMultitaskVariationalStrategy(
+        #     variational_strategy,
+        #     num_tasks=batch_shape[0],
+        # )
 
         super().__init__(variational_strategy)
-        self.mean_module = gpytorch.means.LinearMean(hidden_features)
+        self.mean_module = gpytorch.means.LinearMean(embedding_features)
         base_kernel = ScaleKernel(
-            RBFKernel(ard_num_dims=hidden_features),
+            LinearKernel(),
         )
         self.covar_module = CombinedGraphDiffusion(base_kernel=base_kernel)
-        self.fc = torch.nn.Linear(inducing_points.size(-1), hidden_features, bias=False)
+        self.fc = torch.nn.Linear(inducing_points.size(-1), embedding_features, bias=False)
+        torch.nn.init.normal_(self.fc.weight, std=0.01)
         
     def forward(self, x, x2=None, **kwargs):
         if x2 is None:
@@ -58,10 +60,10 @@ class BronxModel(ApproximateGP):
     
     def to(self, device):
         self = super().to(device)
-        self.variational_strategy.base_variational_strategy.inducing_indices = self.variational_strategy.base_variational_strategy.inducing_indices.to(device)
-        self.variational_strategy.base_variational_strategy.graph = self.variational_strategy.base_variational_strategy.graph.to(device)
+        # self.variational_strategy.base_variational_strategy.inducing_indices = self.variational_strategy.base_variational_strategy.inducing_indices.to(device)
+        # self.variational_strategy.base_variational_strategy.graph = self.variational_strategy.base_variational_strategy.graph.to(device)
 
-        # self.variational_strategy.inducing_points = self.variational_strategy.inducing_points.to(device)
-        # self.variational_strategy.graph = self.variational_strategy.graph.to(device)
+        self.variational_strategy.inducing_points = self.variational_strategy.inducing_points.to(device)
+        self.variational_strategy.graph = self.variational_strategy.graph.to(device)
         return self
     
