@@ -212,8 +212,6 @@ class GraphVariationalStrategy(VariationalStrategy):
             Kmm_root.transpose(-1, -2)
         )
 
-        inducing_covar = graph_exp @ inducing_covar @ graph_exp
-
         # mean term: D_a S^{-1} m
         # unwhitened: (S - S R^{-1} S) S^{-1} m = (I - S R^{-1}) m
         rhs = cov_diff.transpose(-1, -2).matmul(var_mean)
@@ -240,6 +238,7 @@ class GraphVariationalStrategy(VariationalStrategy):
                 .to_dense()
             )
 
+        pseudo_target_covar = graph_exp @ pseudo_target_covar @ graph_exp
         return pseudo_target_covar, pseudo_target_mean
 
     def __call__(
