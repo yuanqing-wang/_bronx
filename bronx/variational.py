@@ -212,6 +212,8 @@ class GraphVariationalStrategy(VariationalStrategy):
             Kmm_root.transpose(-1, -2)
         )
 
+        inducing_covar = graph_exp @ inducing_covar @ graph_exp
+
         # mean term: D_a S^{-1} m
         # unwhitened: (S - S R^{-1} S) S^{-1} m = (I - S R^{-1}) m
         rhs = cov_diff.transpose(-1, -2).matmul(var_mean)
@@ -220,6 +222,7 @@ class GraphVariationalStrategy(VariationalStrategy):
             rhs
         )
         pseudo_target_mean = Kmm_root.matmul(inner_rhs_mean_solve)
+        pseudo_target_mean = graph_exp @ pseudo_target_mean
 
         # ensure inducing covar is psd
         # TODO: make this be an explicit root decomposition
