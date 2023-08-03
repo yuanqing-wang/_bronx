@@ -27,6 +27,39 @@ from gpytorch.variational.variational_strategy import (
     cached,
 )
 
+
+@lru_cache(maxsize=1)
+def graph_exp(graph):
+    a = torch.zeros(
+        graph.number_of_nodes(),
+        graph.number_of_nodes(),
+        dtype=torch.float32,
+        device=graph.device,
+    )
+    src, dst = graph.edges()
+    a[src, dst] = 1
+    d = a.sum(-1, keepdims=True).clamp(min=1)
+    a = a / d
+    a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+    a = torch.linalg.matrix_exp(a)
+    return a
+
+@lru_cache(maxsize=1)
+def graph_exp_inv(graph):
+    a = torch.zeros(
+        graph.number_of_nodes(),
+        graph.number_of_nodes(),
+        dtype=torch.float32,
+        device=graph.device,
+    )
+    src, dst = graph.edges()
+    a[src, dst] = 1
+    d = a.sum(-1, keepdims=True).clamp(min=1)
+    a = a / d
+    a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+    a = torch.linalg.matrix_exp(-a)
+    return a
+
 class GraphVariationalStrategy(VariationalStrategy):
     def __init__(
             self,
@@ -49,7 +82,6 @@ class GraphVariationalStrategy(VariationalStrategy):
         self.graph = graph
         self.register_buffer("inducing_indices", inducing_indices)
 
-
     def forward(
         self,
         x: Tensor,
@@ -60,38 +92,19 @@ class GraphVariationalStrategy(VariationalStrategy):
         **kwargs,
     ):
         # Compute full prior distribution
-        # full_inputs = torch.cat([inducing_points, x], dim=-2)
-        # full_output = self.model.forward(full_inputs, **kwargs)
-        # full_covar = full_output.lazy_covariance_matrix
+        full_inputs = inducing_points
+        full_output = self.model.forward(full_inputs, **kwargs)
+        full_covar = full_output.lazy_covariance_matrix
 
         # Covariance terms
-        # num_induc = inducing_points.size(-2)
-        # test_mean = full_output.mean[..., num_induc:]
-        # induc_induc_covar = full_covar[
-        #     ..., :num_induc, :num_induc
-        # ].add_jitter(self.jitter_val)
-        # induc_data_covar = full_covar[..., :num_induc, num_induc:].to_dense()
-        # data_data_covar = full_covar[..., num_induc:, num_induc:]
-
         num_induc = inducing_points.size(-2)
-
-        data_result = self.model.forward(x, ix1=x_indices, graph=self.graph)
-        test_mean = data_result.mean
-        data_data_covar = data_result.lazy_covariance_matrix
-
-        induc_induc_covar = self.model.forward(
-            x=inducing_points,
-            ix1=self.inducing_indices,
-            graph=self.graph,
-        ).lazy_covariance_matrix
-
-        induc_data_covar = self.model.forward(
-            x=inducing_points,
-            x2=x,
-            ix1=self.inducing_indices,
-            ix2=x_indices,
-            graph=self.graph,
-        ).lazy_covariance_matrix
+        test_mean = full_output.mean
+        induc_induc_covar = full_covar
+        induc_data_covar = full_covar
+        data_data_covar = full_covar
+        induc_induc_covar = full_covar[
+            ..., :num_induc, :num_induc
+        ].add_jitter(self.jitter_val)
 
         # Compute interpolation terms
         # K_ZZ^{-1/2} K_ZX
@@ -109,7 +122,9 @@ class GraphVariationalStrategy(VariationalStrategy):
 
         interp_term = L.solve(
             induc_data_covar.to_dense().to(L.dtype)
-        ).to(induc_data_covar.dtype)
+        ).to(induc_data_covar.dtype) @ graph_exp_inv(self.graph).to(
+            induc_data_covar.dtype
+        )
 
         # Compute the mean of q(f)
         # k_XZ K_ZZ^{-1/2} (m - K_ZZ^{-1/2} \mu_Z) + \mu_X
