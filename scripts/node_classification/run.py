@@ -4,8 +4,8 @@ import gpytorch
 gpytorch.settings.debug._default = False
 gpytorch.settings.lazily_evaluate_kernels._default = False
 import linear_operator
-linear_operator.settings.cholesky_jitter._global_float_value = 1e-4
-linear_operator.settings.cholesky_jitter._global_double_value = 1e-4
+# linear_operator.settings.cholesky_jitter._global_float_value = 1e-4
+# linear_operator.settings.cholesky_jitter._global_double_value = 1e-4
 
 import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
@@ -60,14 +60,14 @@ def run(args):
         inducing_points=g.ndata["feat"],
         inducing_indices=g.nodes(),
         graph=g,
-        hidden_features=args.hidden_features,
+        hidden_features=g.ndata["label"].max() + 1,
         embedding_features=args.embedding_features,
     )
 
     likelihood = gpytorch.likelihoods.SoftmaxLikelihood(
-        num_features=args.hidden_features,
         num_classes=g.ndata["label"].max() + 1,
-        mixing_weights=True,
+        num_features=g.ndata["label"].max() + 1,
+        mixing_weights=None,
     )
 
     if torch.cuda.is_available():
@@ -88,7 +88,8 @@ def run(args):
 
     for idx in range(args.n_epochs):
         optimizer.zero_grad()
-        output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["train_mask"])[0])
+        # output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["train_mask"])[0])
+        output = model(g.ndata["feat"][g.ndata["train_mask"]])
         loss = -mll(output, g.ndata["label"][g.ndata["train_mask"]])
         loss = loss.sum()
         loss.backward()
@@ -97,7 +98,8 @@ def run(args):
         with torch.no_grad():
             model.eval()
             likelihood.eval()
-            output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["val_mask"])[0])
+            # output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["val_mask"])[0])
+            output = model(g.ndata["feat"][g.ndata["val_mask"]])
             marginal = likelihood(output)
             y_hat = marginal.probs.argmax(dim=-1)
             accuracy = (y_hat == g.ndata["label"][g.ndata["val_mask"]]).float().mean()
@@ -110,8 +112,8 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=16)
     parser.add_argument("--embedding_features", type=int, default=64)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-8)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
     parser.add_argument("--n_epochs", type=int, default=5000)
     parser.add_argument("--test", type=int, default=1)

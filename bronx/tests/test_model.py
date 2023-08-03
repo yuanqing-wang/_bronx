@@ -13,4 +13,5 @@ def test_forward():
         graph=g,
     )
     y = model(x)
+    print(y)
 

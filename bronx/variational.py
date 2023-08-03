@@ -122,9 +122,7 @@ class GraphVariationalStrategy(VariationalStrategy):
 
         interp_term = L.solve(
             induc_data_covar.to_dense().to(L.dtype)
-        ).to(induc_data_covar.dtype) @ graph_exp_inv(self.graph).to(
-            induc_data_covar.dtype
-        )
+        ).to(induc_data_covar.dtype)
 
         # Compute the mean of q(f)
         # k_XZ K_ZZ^{-1/2} (m - K_ZZ^{-1/2} \mu_Z) + \mu_X
@@ -155,91 +153,10 @@ class GraphVariationalStrategy(VariationalStrategy):
                 ),
             )
 
+        predictive_mean = predictive_mean[..., x_indices]
+        predictive_covar = predictive_covar[..., x_indices, :][..., :, x_indices]
         # Return the distribution
         return MultivariateNormal(predictive_mean, predictive_covar)
-
-    @cached(name="pseudo_points_memo")
-    def pseudo_points(self) -> Tuple[Tensor, Tensor]:
-        # TODO: have var_mean, var_cov come from
-        # a method of _variational_distribution
-        # while having Kmm_root be a root decomposition to enable
-        # CIQVariationalDistribution support.
-
-        # retrieve the variational mean, m and covariance matrix, S.
-        if not isinstance(
-            self._variational_distribution, CholeskyVariationalDistribution
-        ):
-            raise NotImplementedError(
-                "Only CholeskyVariationalDistribution"
-                "has pseudo-point support currently, ",
-                "but your _variational_distribution is a ",
-                self._variational_distribution.__name__,
-            )
-
-        var_cov_root = TriangularLinearOperator(
-            self._variational_distribution.chol_variational_covar
-        )
-        var_cov = CholLinearOperator(var_cov_root)
-        var_mean = self.variational_distribution.mean
-        if var_mean.shape[-1] != 1:
-            var_mean = var_mean.unsqueeze(-1)
-
-        # compute R = I - S
-        cov_diff = var_cov.add_jitter(-1.0)
-        cov_diff = -1.0 * cov_diff
-
-        # K^{1/2}
-        Kmm = self.model.covar_module(
-            x1=self.inducing_points,
-            ix1=self.inducing_indices,
-            graph=self.graph,
-        )
-        Kmm_root = Kmm.cholesky()
-
-        # D_a = (S^{-1} - K^{-1})^{-1} = S + S R^{-1} S
-        # note that in the whitened case R = I - S, unwhitened R = K - S
-        # we compute (R R^{T})^{-1} R^T S for stability reasons as R is probably not PSD.
-        eval_var_cov = var_cov.to_dense()
-        eval_rhs = cov_diff.transpose(-1, -2).matmul(eval_var_cov)
-        inner_term = cov_diff.matmul(cov_diff.transpose(-1, -2))
-        # TODO: flag the jitter here
-        inner_solve = inner_term.add_jitter(self.jitter_val).solve(
-            eval_rhs, eval_var_cov.transpose(-1, -2)
-        )
-        inducing_covar = var_cov + inner_solve
-
-        inducing_covar = Kmm_root.matmul(inducing_covar).matmul(
-            Kmm_root.transpose(-1, -2)
-        )
-
-        # mean term: D_a S^{-1} m
-        # unwhitened: (S - S R^{-1} S) S^{-1} m = (I - S R^{-1}) m
-        rhs = cov_diff.transpose(-1, -2).matmul(var_mean)
-        # TODO: this jitter too
-        inner_rhs_mean_solve = inner_term.add_jitter(self.jitter_val).solve(
-            rhs
-        )
-        pseudo_target_mean = Kmm_root.matmul(inner_rhs_mean_solve)
-        pseudo_target_mean = graph_exp @ pseudo_target_mean
-
-        # ensure inducing covar is psd
-        # TODO: make this be an explicit root decomposition
-        try:
-            pseudo_target_covar = CholLinearOperator(
-                inducing_covar.add_jitter(self.jitter_val).cholesky()
-            ).to_dense()
-        except NotPSDError:
-            from linear_operator.operators import DiagLinearOperator
-
-            evals, evecs = torch.linalg.eigh(inducing_covar)
-            pseudo_target_covar = (
-                evecs.matmul(DiagLinearOperator(evals + self.jitter_val))
-                .matmul(evecs.transpose(-1, -2))
-                .to_dense()
-            )
-
-        pseudo_target_covar = graph_exp @ pseudo_target_covar @ graph_exp
-        return pseudo_target_covar, pseudo_target_mean
 
     def __call__(
         self, x: Tensor, prior: bool = False, **kwargs
