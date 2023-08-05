@@ -26,9 +26,6 @@ def run(args):
     g = locals()[args.data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
     g = dgl.add_self_loop(g)
-    # src, dst = g.edges()
-    # eids = torch.where(src > dst)[0]
-    # g = dgl.remove_edges(g, eids)
 
     if "train_mask" not in g.ndata:
         g.ndata["train_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
@@ -65,8 +62,8 @@ def run(args):
     )
 
     likelihood = gpytorch.likelihoods.SoftmaxLikelihood(
-        num_classes=g.ndata["label"].max() + 1,
         num_features=g.ndata["label"].max() + 1,
+        num_classes=g.ndata["label"].max() + 1,
         mixing_weights=None,
     )
 
@@ -81,25 +78,29 @@ def run(args):
 
     optimizer = getattr(
         torch.optim, args.optimizer
-    )(list(model.parameters()) + list(likelihood.parameters()), lr=args.learning_rate)
+    )(list(model.hyperparameters()) + list(likelihood.parameters()), lr=args.learning_rate)
+
+    ngd = gpytorch.optim.NGD(model.variational_parameters(), num_data=g.number_of_nodes(), lr=0.1)
     
     model.train()
     likelihood.train()
 
     for idx in range(args.n_epochs):
         optimizer.zero_grad()
-        # output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["train_mask"])[0])
-        output = model(g.ndata["feat"][g.ndata["train_mask"]])
-        loss = -mll(output, g.ndata["label"][g.ndata["train_mask"]])
+        ngd.zero_grad()
+        output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["train_mask"])[0])
+        # output = model(g.ndata["feat"][g.ndata["train_mask"]])
+        loss = -mll(output, target=g.ndata["label"][g.ndata["train_mask"]])
         loss = loss.sum()
         loss.backward()
+        ngd.step()
         optimizer.step()
 
         with torch.no_grad():
             model.eval()
             likelihood.eval()
-            # output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["val_mask"])[0])
-            output = model(g.ndata["feat"][g.ndata["val_mask"]])
+            output = model(g.ndata["feat"], x_indices=torch.where(g.ndata["val_mask"])[0])
+            # output = model(g.ndata["feat"][g.ndata["val_mask"]])
             marginal = likelihood(output)
             y_hat = marginal.probs.argmax(dim=-1)
             accuracy = (y_hat == g.ndata["label"][g.ndata["val_mask"]]).float().mean()
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=16)
     parser.add_argument("--embedding_features", type=int, default=64)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
     parser.add_argument("--n_epochs", type=int, default=5000)

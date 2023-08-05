@@ -3,7 +3,7 @@ import torch
 import dgl
 import gpytorch
 from gpytorch.models import ApproximateGP
-from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
+from gpytorch.variational import TrilNaturalVariationalDistribution
 from gpytorch.kernels import ScaleKernel, RBFKernel, LinearKernel, CosineKernel, MaternKernel
 from .variational import GraphVariationalStrategy
 
@@ -19,26 +19,26 @@ class BronxModel(ApproximateGP):
     ):
 
         batch_shape = torch.Size([hidden_features])
-        variational_distribution = CholeskyVariationalDistribution(
+        variational_distribution = TrilNaturalVariationalDistribution(
             inducing_points.size(-2),
             batch_shape=batch_shape,
         )
         
-        # variational_strategy = GraphVariationalStrategy(
-        #     self,
-        #     inducing_points=inducing_points,
-        #     variational_distribution=variational_distribution,
-        #     graph=graph,
-        #     inducing_indices=inducing_indices,
-        #     learn_inducing_locations=learn_inducing_locations,
-        # )
-
-        variational_strategy = VariationalStrategy(
+        variational_strategy = GraphVariationalStrategy(
             self,
             inducing_points=inducing_points,
             variational_distribution=variational_distribution,
+            graph=graph,
+            inducing_indices=inducing_indices,
             learn_inducing_locations=learn_inducing_locations,
         )
+
+        # variational_strategy = VariationalStrategy(
+        #     self,
+        #     inducing_points=inducing_points,
+        #     variational_distribution=variational_distribution,
+        #     learn_inducing_locations=learn_inducing_locations,
+        # )
 
         super().__init__(variational_strategy)
         self.mean_module = gpytorch.means.LinearMean(embedding_features)
@@ -53,9 +53,9 @@ class BronxModel(ApproximateGP):
         result = gpytorch.distributions.MultivariateNormal(mean, covar)
         return result
     
-    # def to(self, device):
-    #     self = super().to(device)
-    #     self.variational_strategy.inducing_points = self.variational_strategy.inducing_points.to(device)
-    #     self.variational_strategy.graph = self.variational_strategy.graph.to(device)
-    #     return self
+    def to(self, device):
+        self = super().to(device)
+        self.variational_strategy.inducing_points = self.variational_strategy.inducing_points.to(device)
+        self.variational_strategy.graph = self.variational_strategy.graph.to(device)
+        return self
     

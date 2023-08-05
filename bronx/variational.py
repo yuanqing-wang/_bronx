@@ -102,14 +102,25 @@ class GraphVariationalStrategy(VariationalStrategy):
         induc_induc_covar = full_covar
         induc_data_covar = full_covar
         data_data_covar = full_covar
-        induc_induc_covar = full_covar[
-            ..., :num_induc, :num_induc
-        ].add_jitter(self.jitter_val)
+        induc_induc_covar = full_covar.add_jitter(self.jitter_val)
+        induc_data_covar = induc_data_covar.to_dense()
+
+        # Compute full prior distribution
+        # full_inputs = torch.cat([inducing_points, x], dim=-2)
+        # full_output = self.model.forward(full_inputs, **kwargs)
+        # full_covar = full_output.lazy_covariance_matrix
+
+        # # Covariance terms
+        # num_induc = inducing_points.size(-2)
+        # test_mean = full_output.mean[..., num_induc:]
+        # induc_induc_covar = full_covar[..., :num_induc, :num_induc].add_jitter(self.jitter_val)
+        # induc_data_covar = full_covar[..., :num_induc, num_induc:].to_dense()
+        # data_data_covar = full_covar[..., num_induc:, num_induc:]
 
         # Compute interpolation terms
         # K_ZZ^{-1/2} K_ZX
         # K_ZZ^{-1/2} \mu_Z
-        L = self._cholesky_factor(induc_induc_covar)
+        L = self._cholesky_factor(induc_induc_covar) # g-1
         if L.shape != induc_induc_covar.shape:
             # Aggressive caching can cause nasty shape incompatibilies
             # when evaluating with different batch shapes
@@ -120,40 +131,47 @@ class GraphVariationalStrategy(VariationalStrategy):
                 pass
             L = self._cholesky_factor(induc_induc_covar)
 
+        g = graph_exp(self.graph)
+        g_inv = graph_exp_inv(self.graph)
+
         interp_term = L.solve(
-            induc_data_covar.to_dense().to(L.dtype)
-        ).to(induc_data_covar.dtype)
+            induc_data_covar.to_dense().to(L.dtype) # g-1 g-1
+        ).to(induc_data_covar.dtype) #g-1
 
         # Compute the mean of q(f)
         # k_XZ K_ZZ^{-1/2} (m - K_ZZ^{-1/2} \mu_Z) + \mu_X
         predictive_mean = (
-            interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)
+            interp_term.transpose(-1, -2) @ g
+            @ inducing_values.unsqueeze(-1)
         ).squeeze(-1) + test_mean
 
         # Compute the covariance of q(f)
         # K_XX + k_XZ K_ZZ^{-1/2} (S - I) K_ZZ^{-1/2} k_ZX
-        middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1)
+        middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1) # g-1 g-1
         if variational_inducing_covar is not None:
             middle_term = SumLinearOperator(
                 variational_inducing_covar, middle_term
             )
 
+
         if trace_mode.on():
             predictive_covar = (
-                data_data_covar.add_jitter(self.jitter_val).to_dense()
+                g @ data_data_covar.add_jitter(self.jitter_val).to_dense() @ g
                 + interp_term.transpose(-1, -2)
-                @ middle_term.to_dense()
+                @ middle_term.to_dense() 
                 @ interp_term
             )
         else:
             predictive_covar = SumLinearOperator(
-                data_data_covar.add_jitter(self.jitter_val),
+                data_data_covar.add_jitter(self.jitter_val) @ g, # g
                 MatmulLinearOperator(
-                    interp_term.transpose(-1, -2), middle_term @ interp_term
+                    interp_term.transpose(-1, -2), # g-1
+                    middle_term
+                    @ interp_term
                 ),
             )
 
-        predictive_mean = predictive_mean[..., x_indices]
+        predictive_mean =  predictive_mean[..., x_indices]
         predictive_covar = predictive_covar[..., x_indices, :][..., :, x_indices]
         # Return the distribution
         return MultivariateNormal(predictive_mean, predictive_covar)
