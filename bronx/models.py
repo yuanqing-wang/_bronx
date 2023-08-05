@@ -9,18 +9,8 @@ from pyro.contrib.gp.util import conditional
 from pyro.nn.module import pyro_method
 from pyro import distributions as dist
 
-# class GraphVariationalSparseGaussianProcess(VSGP):
-#     def __init__(self, graph, X, y, kernel, Xu, likelihood, latent_shape=None):
-#         kernel = partial(kernel, graph=graph)
-#         super().__init__(
-#             X, y, kernel, Xu.float(), likelihood, latent_shape=latent_shape,
-#         )
-#         del self.Xu
-#         self.register_buffer("Xu", Xu)
-
 
 def graph_conditional(
-    Xnew,
     X,
     graph,
     iXnew,
@@ -40,10 +30,10 @@ def graph_conditional(
     latent_shape = f_loc.shape[:-1]
 
     if Lff is None:
-        Kff = kernel(X, graph=graph, iX=iX).contiguous()
+        Kff = kernel(X).contiguous()
         Kff.view(-1)[:: N + 1] += jitter  # add jitter to diagonal
         Lff = torch.linalg.cholesky(Kff)
-    Kfs = kernel(X, Xnew, graph=graph, iX=iX, iZ=iXnew)
+    Kfs = kernel(X)
     # convert f_loc_shape from latent_shape x N to N x latent_shape
     f_loc = f_loc.permute(-1, *range(len(latent_shape)))
     # convert f_loc to 2D tensor for packing
@@ -75,11 +65,11 @@ def graph_conditional(
     loc = W.matmul(v_2D).t().reshape(loc_shape)
 
     if full_cov:
-        Kss = kernel(Xnew, graph=graph, iX=iXnew)
+        Kss = kernel(X, graph=graph, iX=iXnew)
         Qss = W.matmul(W.t())
         cov = Kss - Qss
     else:
-        Kssdiag = kernel(Xnew, graph=graph, iX=iXnew, diag=True)
+        Kssdiag = kernel(X, graph=graph, iX=iXnew, diag=True)
         Qssdiag = W.pow(2).sum(dim=-1)
         # Theoretically, Kss - Qss is non-negative; but due to numerical
         # computation, that might not be the case in practice.
