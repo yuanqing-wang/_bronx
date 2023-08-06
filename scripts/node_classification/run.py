@@ -6,10 +6,8 @@ import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
 from pyro.contrib.gp.likelihoods.multi_class import MultiClass
-from bronx.kernels import CombinedGraphDiffusion
 from bronx.models import GraphVariationalSparseGaussianProcess as GVSGP
 from pyro.contrib.gp.models.vsgp import VariationalSparseGP
-from pyro.contrib.gp.kernels.dot_product import Linear
 
 def run(args):
     pyro.clear_param_store()
@@ -25,11 +23,10 @@ def run(args):
     )
 
     g = locals()[args.data](verbose=False)[0]
-    g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
-    src, dst = g.edges()
-    eids = torch.where(src > dst)[0]
-    g = dgl.remove_edges(g, eids)
+
+    g.ndata["feat"] = g.ndata["feat"] - g.ndata["feat"].mean(dim=-1, keepdim=True)
+    g.ndata["feat"] = torch.nn.functional.normalize(g.ndata["feat"], dim=-1)
+
 
     if "train_mask" not in g.ndata:
         g.ndata["train_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
@@ -60,24 +57,19 @@ def run(args):
         g = g.to("cuda:0")
 
     likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
-    from pyro.contrib.gp.kernels import Linear, RBF
-    base_kernel = RBF(args.hidden_features)
-    kernel = CombinedGraphDiffusion(
-        args.hidden_features, base_kernel=base_kernel,
-    )
+    from pyro.contrib.gp.kernels import Matern52
+    kernel = Matern52(args.hidden_features)
 
     model = GVSGP(
         graph=g,
         X=g.ndata["feat"],
         y=g.ndata["label"][g.ndata["train_mask"]],
         iX=torch.where(g.ndata["train_mask"])[0],
-        Xu=g.ndata["feat"],
-        iXu=g.nodes(),
         hidden_features=args.hidden_features,
         kernel=kernel,
         likelihood=likelihood,
         latent_shape=(g.ndata["label"].max()+1,),
-        jitter=1e-2,
+        jitter=1e-5,
     )
 
     if torch.cuda.is_available():
@@ -99,11 +91,11 @@ def run(args):
         optimizer.step()
 
         mean, cov = model(
-            X=g.ndata["feat"],
             iX=torch.where(g.ndata["val_mask"])[0]
         )
 
         y_hat = mean.argmax(0)
+
         y = g.ndata["label"][g.ndata["val_mask"]]
         accuracy = (y == y_hat).sum() / y_hat.shape[0]
         print(loss.item(), accuracy)
@@ -114,7 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--embedding_features", type=int, default=64)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
     parser.add_argument("--n_epochs", type=int, default=5000)
