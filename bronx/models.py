@@ -9,11 +9,25 @@ from pyro.contrib.gp.util import conditional
 from pyro.nn.module import pyro_method
 from pyro import distributions as dist
 
+@lru_cache(maxsize=1)
+def graph_exp(graph):
+    a = torch.zeros(
+        graph.number_of_nodes(),
+        graph.number_of_nodes(),
+        dtype=torch.float32,
+        device=graph.device,
+    )
+    src, dst = graph.edges()
+    a[src, dst] = 1
+    d = a.sum(-1, keepdims=True).clamp(min=1)
+    a = a / d
+    a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+    a = torch.linalg.matrix_exp(a)
+    return a
 
 def graph_conditional(
     X,
     graph,
-    iXnew,
     iX,
     kernel,
     f_loc,
@@ -25,77 +39,65 @@ def graph_conditional(
 ):
     # N = X.size(0)
     # M = Xnew.size(0)
-    N = len(iX)
-    M = len(iXnew)
+
+    A = graph_exp(graph)
+    K = kernel(X)
+    M = len(iX)
+    N = len(X)
     latent_shape = f_loc.shape[:-1]
 
     if Lff is None:
-        Kff = kernel(X).contiguous()
-        Kff.view(-1)[:: N + 1] += jitter  # add jitter to diagonal
+        Kff = K.contiguous()
+        Kff = Kff + torch.eye(Kff.shape[-1], device=Kff.device) * jitter
         Lff = torch.linalg.cholesky(Kff)
-    Kfs = kernel(X)
+
     # convert f_loc_shape from latent_shape x N to N x latent_shape
     f_loc = f_loc.permute(-1, *range(len(latent_shape)))
     # convert f_loc to 2D tensor for packing
     f_loc_2D = f_loc.reshape(N, -1)
-    if f_scale_tril is not None:
-        # convert f_scale_tril_shape from latent_shape x N x N to N x N x latent_shape
-        f_scale_tril = f_scale_tril.permute(-2, -1, *range(len(latent_shape)))
-        # convert f_scale_tril to 2D tensor for packing
-        f_scale_tril_2D = f_scale_tril.reshape(N, -1)
+
+    # convert f_scale_tril_shape from latent_shape x N x N to N x N x latent_shape
+    f_scale_tril = f_scale_tril.permute(-2, -1, *range(len(latent_shape)))
+    # convert f_scale_tril to 2D tensor for packing
+    f_scale_tril_2D = f_scale_tril.reshape(N, -1)
 
     if whiten:
         v_2D = f_loc_2D
-        W = torch.linalg.solve_triangular(Lff, Kfs, upper=False).t()
+        W = K
         if f_scale_tril is not None:
             S_2D = f_scale_tril_2D
     else:
-        pack = torch.cat((f_loc_2D, Kfs), dim=1)
-        if f_scale_tril is not None:
-            pack = torch.cat((pack, f_scale_tril_2D), dim=1)
+        v_2D = torch.linalg.solve_triangular(Lff, f_loc_2D, upper=False)
+        W = K
+        S_2D = torch.linalg.solve_triangular(Lff, f_scale_tril_2D, upper=False)
 
-        Lffinv_pack = torch.linalg.solve_triangular(Lff, pack, upper=False)
-        # unpack
-        v_2D = Lffinv_pack[:, : f_loc_2D.size(1)]
-        W = Lffinv_pack[:, f_loc_2D.size(1) : f_loc_2D.size(1) + M].t()
-        if f_scale_tril is not None:
-            S_2D = Lffinv_pack[:, -f_scale_tril_2D.size(1) :]
+    # v_2D = A_inv @ v_2D
+    # W = A @ W @ A
+    # S_2D = A_inv @ S_2D
 
     loc_shape = latent_shape + (M,)
-    loc = W.matmul(v_2D).t().reshape(loc_shape)
+    loc = W.matmul(v_2D).t()
+    loc = loc @ A
+    loc = loc[:, iX]
+    loc = loc.reshape(loc_shape)
+
+    W_S_shape = (M,) + f_scale_tril.shape[1:]
+    W_S = W.matmul(S_2D)
+    W_S = A @ W_S
+    W_S = W_S[iX, :]
+    W_S = W_S.reshape(W_S_shape)
+    # convert W_S_shape from M x N x latent_shape to latent_shape x M x N
+    W_S = W_S.permute(list(range(2, W_S.dim())) + [0, 1])
 
     if full_cov:
-        Kss = kernel(X, graph=graph, iX=iXnew)
-        Qss = W.matmul(W.t())
-        cov = Kss - Qss
+        St_Wt = W_S.transpose(-2, -1)
+        cov = W_S.matmul(St_Wt)
+        return loc, cov
+
     else:
-        Kssdiag = kernel(X, graph=graph, iX=iXnew, diag=True)
-        Qssdiag = W.pow(2).sum(dim=-1)
-        # Theoretically, Kss - Qss is non-negative; but due to numerical
-        # computation, that might not be the case in practice.
+        var = W_S.pow(2).sum(dim=-1)
+        return loc, var
 
-        var = (Kssdiag - Qssdiag).clamp(min=0)
-
-    if f_scale_tril is not None:
-        W_S_shape = (M,) + f_scale_tril.shape[1:]
-        W_S = W.matmul(S_2D).reshape(W_S_shape)
-        # convert W_S_shape from M x N x latent_shape to latent_shape x M x N
-        W_S = W_S.permute(list(range(2, W_S.dim())) + [0, 1])
-
-        if full_cov:
-            St_Wt = W_S.transpose(-2, -1)
-            K = W_S.matmul(St_Wt)
-            cov = cov + K
-        else:
-            Kdiag = W_S.pow(2).sum(dim=-1)
-            var = var + Kdiag
-    else:
-        if full_cov:
-            cov = cov.expand(latent_shape + (M, M))
-        else:
-            var = var.expand(latent_shape + (M,))
-
-    return (loc, cov) if full_cov else (loc, var)
 
 
 class GraphVariationalSparseGaussianProcess(VSGP):
@@ -105,8 +107,6 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         X,
         y,
         iX,
-        Xu,
-        iXu,
         kernel, 
         likelihood, 
         hidden_features,
@@ -117,26 +117,20 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             X=X,
             y=y,
             kernel=kernel,
-            Xu=Xu,
+            Xu=X,
             likelihood=likelihood,
             latent_shape=latent_shape,
             jitter=jitter,
         )
         self.graph = graph
-        self.num_inducing_points = len(iXu)
+        self.num_inducing_points = graph.number_of_nodes()
         del self.Xu
-        self.register_buffer("Xu", Xu)
+        self.register_buffer("Xu", X)
         self.register_buffer("iX", iX)
-        self.register_buffer("iXu", iXu)
         self.W = torch.nn.Parameter(
             torch.empty(X.shape[-1], hidden_features),
         )
-        torch.nn.init.xavier_normal_(self.W)
-
-        self.W_mean = torch.nn.Parameter(
-            torch.empty(X.shape[-1], *latent_shape),
-        )
-        torch.nn.init.xavier_normal_(self.W_mean)
+        torch.nn.init.normal_(self.W, std=1.0)
 
     def set_data(self, X, y):
         self.X = X
@@ -145,14 +139,12 @@ class GraphVariationalSparseGaussianProcess(VSGP):
     @pyro_method
     def model(self):
         self.set_mode("model")
-        Kuu = self.kernel(
-            self.Xu@self.W, 
-            self.Xu@self.W, 
-            self.graph, 
-            self.iXu, 
-            self.iXu,
-        ).contiguous()
-        Kuu.view(-1)[:: self.num_inducing_points + 1] += self.jitter
+        X = self.Xu @ self.W
+        X = X.tanh()
+        Kuu = self.kernel(X).contiguous()
+        a = graph_exp(self.graph)
+        Kuu = a @ Kuu @ a.T
+        Kuu = Kuu + torch.eye(Kuu.shape[-1], device=Kuu.device) * self.jitter
         Luu = torch.linalg.cholesky(Kuu)
         zero_loc = self.Xu.new_zeros(self.u_loc.shape)
         pyro.sample(
@@ -162,11 +154,9 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             ),
         )
         f_loc, f_var = graph_conditional(
-            Xnew=self.X@self.W, 
             X=self.Xu@self.W,
             graph=self.graph,
-            iXnew=self.iX,
-            iX=self.iXu,
+            iX=self.iX,
             kernel=self.kernel, 
             f_loc=self.u_loc, 
             f_scale_tril=self.u_scale_tril, 
@@ -177,15 +167,12 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         # f_loc = f_loc + (self.X[self.iX, :] @ self.W_mean).T
         return self.likelihood(f_loc, f_var, self.y)
 
-    def forward(self, X, iX, full_cov=False):
-        self._check_Xnew_shape(X)
+    def forward(self, iX, full_cov=False):
         self.set_mode("guide")
         loc, cov = graph_conditional(
-            Xnew=X@self.W,
             X=self.Xu@self.W,
             graph=self.graph,
-            iXnew=iX,
-            iX=self.iXu,
+            iX=iX,
             kernel=self.kernel,
             f_loc=self.u_loc,
             f_scale_tril=self.u_scale_tril,
