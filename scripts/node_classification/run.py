@@ -57,14 +57,15 @@ def run(args):
         g = g.to("cuda:0")
 
     likelihood = MultiClass(num_classes=g.ndata["label"].max()+1)
-    from pyro.contrib.gp.kernels import Matern52
-    kernel = Matern52(args.hidden_features)
+    from pyro.contrib.gp.kernels import Matern32
+    kernel = Matern32(args.hidden_features)
 
     model = GVSGP(
         graph=g,
         X=g.ndata["feat"],
         y=g.ndata["label"][g.ndata["train_mask"]],
         iX=torch.where(g.ndata["train_mask"])[0],
+        in_features=g.ndata["feat"].shape[-1],
         hidden_features=args.hidden_features,
         kernel=kernel,
         likelihood=likelihood,
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--embedding_features", type=int, default=64)
-    parser.add_argument("--learning_rate", type=float, default=1e-2)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
     parser.add_argument("--n_epochs", type=int, default=5000)
