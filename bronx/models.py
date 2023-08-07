@@ -1,4 +1,3 @@
-from atexit import register
 from functools import partial, lru_cache
 import math
 from statistics import covariance
@@ -152,6 +151,8 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         self, 
         graph,
         X,
+        iX,
+        y,
         kernel, 
         likelihood, 
         in_features,
@@ -160,40 +161,36 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         jitter=1e-6,
         whiten=False,
     ):
-        super().__init__()
-        self.X = X
-        self.kernel = kernel
-        self.latent_shape = latent_shape
-        self.jitter = jitter
-        self.graph = graph
-        self.num_inducing_points = graph.number_of_nodes()
-        self.register_buffer("Xu", X)
-        self.latent_shape = latent_shape
-
-        M = self.Xu.size(0)
-        u_loc = self.Xu.new_zeros(self.latent_shape + (M,))
-        self.u_loc = pyro.nn.PyroParam(u_loc)
-
-        identity = torch.eye(M, dtype=self.Xu.dtype, device=self.Xu.device)
-        u_scale_tril = identity.repeat(self.latent_shape + (1, 1))
-        self.u_scale_tril = pyro.nn.PyroParam(
-            u_scale_tril, 
-            pyro.distributions.constraints.lower_cholesky,
+        super().__init__(
+            X=X,
+            Xu=X,
+            y=y,
+            kernel=kernel,
+            likelihood=likelihood,
+            latent_shape=latent_shape,
+            jitter=jitter,
+            whiten=whiten,
         )
-
-        self.whiten = whiten
-        self._sample_latent = True
-
+        del self.Xu
+        self.register_buffer("iX", iX)
+        self.register_buffer("Xu", X)
+        self.graph = graph
         self.W = torch.nn.Parameter(
             torch.empty(X.shape[-1], hidden_features),
         )
         torch.nn.init.normal_(self.W, std=1.0)
         self.rewire = Rewire(in_features, hidden_features)
 
-    def forward(self, iX, y=None):
+    def set_data(self, X, y):
+        self.X = X
+        self.y = y
+
+    def model(self):
+        iX = self.iX
+        y = self.y
         X = self.Xu @ self.W
-        a = self.rewire(self.Xu, self.graph)
-        X = a @ X
+        # a = self.rewire(self.Xu, self.graph)
+        # X = a @ X
         Kuu = self.kernel(X).contiguous()
         Kuu = Kuu + torch.eye(Kuu.shape[-1], device=Kuu.device) * self.jitter
         Luu = torch.linalg.cholesky(Kuu)
@@ -206,11 +203,10 @@ class GraphVariationalSparseGaussianProcess(VSGP):
                 zero_loc.dim() - 1
             ),
         )
-
         f_loc, f_var = graph_conditional(
-            X=self.Xu@self.W,
+            X=X,
             graph=self.graph,
-            iX=self.iX,
+            iX=iX,
             kernel=self.kernel, 
             f_loc=self.u_loc, 
             f_scale_tril=self.u_scale_tril, 
@@ -221,12 +217,15 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         )
         self.likelihood._load_pyro_samples()
         # f_loc = f_loc + (self.X[self.iX, :] @ self.W_mean).T
-        return self.likelihood(f_loc, f_var, self.y)
+        return self.likelihood(f_loc, f_var, y)
 
     def forward(self, iX, full_cov=False):
         self.set_mode("guide")
+        X = self.Xu @ self.W
+        # a = self.rewire(self.Xu, self.graph)
+        # X = a @ X
         loc, cov = graph_conditional(
-            X=self.Xu@self.W,
+            X=X,
             graph=self.graph,
             iX=iX,
             kernel=self.kernel,
@@ -237,24 +236,4 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             whiten=True,
         )
 
-        f = dist.Normal(
-            f_loc, f_var.sqrt(),
-        ).to_event(1).sample()
-
-        if y is not None:
-            y = pyro.sample(
-                "y",
-                dist.Categorical(
-                    logits=f.swapaxes(-1, -2)
-                ).to_event(1),
-                obs=y,
-            )
-        return f_loc
-
-    def guide(self, iX, y=None):
-        pyro.sample(
-            "u",
-            dist.MultivariateNormal(self.u_loc, scale_tril=self.u_scale_tril).to_event(
-                self.u_loc.dim() - 1
-            ),
-        )
+        return loc, cov

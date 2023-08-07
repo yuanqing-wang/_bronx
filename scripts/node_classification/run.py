@@ -68,43 +68,37 @@ def run(args):
         in_features=g.ndata["feat"].shape[-1],
         hidden_features=args.hidden_features,
         kernel=kernel,
-        jitter=1e-2,
+        jitter=1e-5,
         latent_shape=(g.ndata["label"].max()+1,),
+        likelihood=likelihood,
     )
 
     if torch.cuda.is_available():
         # a = a.cuda()
         model = model.cuda()
 
-    optimizer = getattr(pyro.optim, args.optimizer)(
-        {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+    optimizer = getattr(torch.optim, args.optimizer)(
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
     )
 
-    svi = pyro.infer.SVI(
-        model.forward,
-        model.guide,
-        optimizer,
-        loss=pyro.infer.TraceMeanField_ELBO(),
-    )
-    
+    loss_fn = pyro.infer.Trace_ELBO().differentiable_loss
+
+
     for idx in range(args.n_epochs):
         model.train()
-        loss = svi.step(iX=torch.where(g.ndata["train_mask"])[0])
+        optimizer.zero_grad()
+        loss = loss_fn(model.model, model.guide)
+        loss.backward()
         model.eval()
 
         with torch.no_grad():
-            predictive = pyro.infer.Predictive(
-                model.forward,
-                guide=model.guide,
-                return_sites=("_RETURN",),
-                num_samples=1,
-            )
-            y_hat = predictive(
-                iX=torch.where(g.ndata["val_mask"])[0],
-            )["_RETURN"].squeeze(0).swapaxes(0, 1).argmax(dim=-1)
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = (y_hat == y).float().mean()
-            print(loss, accuracy)
+            y_hat, _ = model(torch.where(g.ndata["val_mask"])[0])
+            y_hat = y_hat.argmax(dim=0)
+            accuracy = (y_hat == g.ndata["label"][g.ndata["val_mask"]]).float().mean()
+            print(accuracy)
+
 
 if __name__ == "__main__":
     import argparse
