@@ -1,13 +1,48 @@
+from atexit import register
 from functools import partial, lru_cache
 import math
 import torch
 import dgl
+from dgl.nn.functional import edge_softmax
 import pyro
 from pyro import poutine
 from pyro.contrib.gp.models.vsgp import VariationalSparseGP as VSGP
 from pyro.contrib.gp.util import conditional
 from pyro.nn.module import pyro_method
 from pyro import distributions as dist
+<<<<<<< HEAD
+=======
+from torch.distributions import register_kl
+from torch.distributions.kl import _batch_trace_XXT, _batch_mahalanobis
+
+
+class Rewire(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_q = torch.nn.Linear(in_features, out_features, bias=False)
+
+    def forward(self, feat, graph):
+        graph = graph.local_var()
+        k = self.fc_k(feat)
+        q = self.fc_q(feat)
+        graph.ndata["k"] = k
+        graph.ndata["q"] = q
+        graph.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
+        e = graph.edata["e"]
+        e = edge_softmax(graph, e).squeeze(-1)
+        a = torch.zeros(
+            graph.number_of_nodes(),
+            graph.number_of_nodes(),
+            dtype=torch.float32,
+            device=graph.device,
+        )
+        src, dst = graph.edges()
+        a[src, dst] = e
+        a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+        a = torch.linalg.matrix_exp(a)
+        return a
+>>>>>>> 3f5b995b2bd80b1ac780b14098413ba9c7d7afcb
 
 @lru_cache(maxsize=1)
 def graph_exp(graph):
@@ -24,6 +59,25 @@ def graph_exp(graph):
     a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
     a = torch.linalg.matrix_exp(a)
     return a
+<<<<<<< HEAD
+=======
+
+@lru_cache(maxsize=1)
+def graph_exp_inv(graph):
+    a = torch.zeros(
+        graph.number_of_nodes(),
+        graph.number_of_nodes(),
+        dtype=torch.float32,
+        device=graph.device,
+    )
+    src, dst = graph.edges()
+    a[src, dst] = 1
+    d = a.sum(-1, keepdims=True).clamp(min=1)
+    a = a / d
+    a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+    a = torch.linalg.matrix_exp(-a)
+    return a
+>>>>>>> 3f5b995b2bd80b1ac780b14098413ba9c7d7afcb
 
 def graph_conditional(
     X,
@@ -77,13 +131,13 @@ def graph_conditional(
 
     loc_shape = latent_shape + (M,)
     loc = W.matmul(v_2D).t()
-    loc = loc @ A
+    # loc = loc @ A
     loc = loc[:, iX]
     loc = loc.reshape(loc_shape)
 
     W_S_shape = (M,) + f_scale_tril.shape[1:]
     W_S = W.matmul(S_2D)
-    W_S = A @ W_S
+    # W_S = A @ W_S
     W_S = W_S[iX, :]
     W_S = W_S.reshape(W_S_shape)
     # convert W_S_shape from M x N x latent_shape to latent_shape x M x N
@@ -99,6 +153,9 @@ def graph_conditional(
         return loc, var
 
 
+    else:
+        var = W_S.pow(2).sum(dim=-1)
+        return loc, var
 
 class GraphVariationalSparseGaussianProcess(VSGP):
     def __init__(
@@ -109,6 +166,7 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         iX,
         kernel, 
         likelihood, 
+        in_features,
         hidden_features,
         latent_shape=None,
         jitter=1e-6,
@@ -131,6 +189,7 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             torch.empty(X.shape[-1], hidden_features),
         )
         torch.nn.init.normal_(self.W, std=1.0)
+        self.rewire = Rewire(in_features, hidden_features)
 
     def set_data(self, X, y):
         self.X = X
@@ -140,19 +199,21 @@ class GraphVariationalSparseGaussianProcess(VSGP):
     def model(self):
         self.set_mode("model")
         X = self.Xu @ self.W
-        X = X.tanh()
+        a = self.rewire(self.Xu, self.graph)
+        X = a @ X
         Kuu = self.kernel(X).contiguous()
-        a = graph_exp(self.graph)
-        Kuu = a @ Kuu @ a.T
         Kuu = Kuu + torch.eye(Kuu.shape[-1], device=Kuu.device) * self.jitter
         Luu = torch.linalg.cholesky(Kuu)
         zero_loc = self.Xu.new_zeros(self.u_loc.shape)
         pyro.sample(
             self._pyro_get_fullname("u"),
-            dist.MultivariateNormal(zero_loc, scale_tril=Luu).to_event(
+            dist.MultivariateNormal(
+                    zero_loc, scale_tril=Luu,
+                ).to_event(
                 zero_loc.dim() - 1
             ),
         )
+
         f_loc, f_var = graph_conditional(
             X=self.Xu@self.W,
             graph=self.graph,
@@ -162,6 +223,8 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             f_scale_tril=self.u_scale_tril, 
             full_cov=False, 
             jitter=self.jitter, 
+            Lff=Luu,
+            whiten=True,
         )
         self.likelihood._load_pyro_samples()
         # f_loc = f_loc + (self.X[self.iX, :] @ self.W_mean).T
@@ -178,6 +241,7 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             f_scale_tril=self.u_scale_tril,
             full_cov=full_cov,
             jitter=self.jitter,
+            whiten=True,
         )
         # loc = loc + (X[iX, :] @ self.W_mean).T
         return loc, cov
