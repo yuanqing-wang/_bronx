@@ -1,4 +1,3 @@
-from atexit import register
 from functools import partial, lru_cache
 import math
 import torch
@@ -7,13 +6,9 @@ from dgl.nn.functional import edge_softmax
 import pyro
 from pyro import poutine
 from pyro.contrib.gp.models.vsgp import VariationalSparseGP as VSGP
-from pyro.contrib.gp.util import conditional
 from pyro.nn.module import pyro_method
 from pyro import distributions as dist
-<<<<<<< HEAD
-=======
-from torch.distributions import register_kl
-from torch.distributions.kl import _batch_trace_XXT, _batch_mahalanobis
+from pyro.distributions.util import eye_like
 
 
 class Rewire(torch.nn.Module):
@@ -42,7 +37,6 @@ class Rewire(torch.nn.Module):
         a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
         a = torch.linalg.matrix_exp(a)
         return a
->>>>>>> 3f5b995b2bd80b1ac780b14098413ba9c7d7afcb
 
 @lru_cache(maxsize=1)
 def graph_exp(graph):
@@ -59,8 +53,6 @@ def graph_exp(graph):
     a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
     a = torch.linalg.matrix_exp(a)
     return a
-<<<<<<< HEAD
-=======
 
 @lru_cache(maxsize=1)
 def graph_exp_inv(graph):
@@ -77,7 +69,6 @@ def graph_exp_inv(graph):
     a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
     a = torch.linalg.matrix_exp(-a)
     return a
->>>>>>> 3f5b995b2bd80b1ac780b14098413ba9c7d7afcb
 
 def graph_conditional(
     X,
@@ -94,7 +85,8 @@ def graph_conditional(
     # N = X.size(0)
     # M = Xnew.size(0)
 
-    A = graph_exp(graph)
+    if graph is not None:
+        A = graph_exp(graph)
     K = kernel(X)
     M = len(iX)
     N = len(X)
@@ -131,13 +123,15 @@ def graph_conditional(
 
     loc_shape = latent_shape + (M,)
     loc = W.matmul(v_2D).t()
-    # loc = loc @ A
+    if graph is not None:
+        loc = loc @ A
     loc = loc[:, iX]
     loc = loc.reshape(loc_shape)
 
     W_S_shape = (M,) + f_scale_tril.shape[1:]
     W_S = W.matmul(S_2D)
-    # W_S = A @ W_S
+    if graph is not None:
+        W_S = A @ W_S
     W_S = W_S[iX, :]
     W_S = W_S.reshape(W_S_shape)
     # convert W_S_shape from M x N x latent_shape to latent_shape x M x N
@@ -147,11 +141,6 @@ def graph_conditional(
         St_Wt = W_S.transpose(-2, -1)
         cov = W_S.matmul(St_Wt)
         return loc, cov
-
-    else:
-        var = W_S.pow(2).sum(dim=-1)
-        return loc, var
-
 
     else:
         var = W_S.pow(2).sum(dim=-1)
@@ -168,8 +157,10 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         likelihood, 
         in_features,
         hidden_features,
+        embedding_features,
         latent_shape=None,
         jitter=1e-6,
+        whiten=False,
     ):
         super().__init__(
             X=X,
@@ -177,8 +168,9 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             kernel=kernel,
             Xu=X,
             likelihood=likelihood,
-            latent_shape=latent_shape,
+            latent_shape=(hidden_features,),
             jitter=jitter,
+            whiten=whiten,
         )
         self.graph = graph
         self.num_inducing_points = graph.number_of_nodes()
@@ -186,10 +178,17 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         self.register_buffer("Xu", X)
         self.register_buffer("iX", iX)
         self.W = torch.nn.Parameter(
-            torch.empty(X.shape[-1], hidden_features),
+            torch.empty(X.shape[-1], embedding_features),
         )
         torch.nn.init.normal_(self.W, std=1.0)
-        self.rewire = Rewire(in_features, hidden_features)
+
+        self.W_out = torch.nn.Parameter(
+            torch.empty(embedding_features, y.max() + 1),
+        )
+        torch.nn.init.normal_(self.W_out, std=1.0)
+
+
+        self.rewire = Rewire(in_features, embedding_features)
 
     def set_data(self, X, y):
         self.X = X
@@ -199,41 +198,59 @@ class GraphVariationalSparseGaussianProcess(VSGP):
     def model(self):
         self.set_mode("model")
         X = self.Xu @ self.W
-        a = self.rewire(self.Xu, self.graph)
-        X = a @ X
-        Kuu = self.kernel(X).contiguous()
-        Kuu = Kuu + torch.eye(Kuu.shape[-1], device=Kuu.device) * self.jitter
-        Luu = torch.linalg.cholesky(Kuu)
         zero_loc = self.Xu.new_zeros(self.u_loc.shape)
-        pyro.sample(
-            self._pyro_get_fullname("u"),
-            dist.MultivariateNormal(
-                    zero_loc, scale_tril=Luu,
-                ).to_event(
-                zero_loc.dim() - 1
-            ),
-        )
+        Luu = None
+        if self.whiten:
+            graph = self.graph
+            identity = eye_like(self.Xu, self.num_inducing_points)
+            pyro.sample(
+                self._pyro_get_fullname("u"),
+                dist.MultivariateNormal(
+                        zero_loc, 
+                        identity,
+                    ).to_event(
+                    zero_loc.dim() - 1
+                ),
+            )
+        else:
+            graph = None
+            Kuu = self.kernel(X).contiguous()
+            Kuu = graph_exp(self.graph) @ Kuu @ graph_exp(self.graph).T
+            Kuu = Kuu + torch.eye(Kuu.shape[-1], device=Kuu.device) * self.jitter
+            Luu = torch.linalg.cholesky(Kuu)
+            pyro.sample(
+                self._pyro_get_fullname("u"),
+                dist.MultivariateNormal(zero_loc, scale_tril=Luu).to_event(
+                    zero_loc.dim() - 1
+                ),
+            )
 
         f_loc, f_var = graph_conditional(
-            X=self.Xu@self.W,
-            graph=self.graph,
+            X=X,
+            graph=graph,
             iX=self.iX,
             kernel=self.kernel, 
             f_loc=self.u_loc, 
             f_scale_tril=self.u_scale_tril, 
             full_cov=False, 
             jitter=self.jitter, 
+            whiten=self.whiten,
             Lff=Luu,
-            whiten=True,
         )
-        self.likelihood._load_pyro_samples()
-        # f_loc = f_loc + (self.X[self.iX, :] @ self.W_mean).T
-        return self.likelihood(f_loc, f_var, self.y)
+
+        f = dist.Normal(f_loc, f_var.sqrt())()
+        f_swap = f.transpose(-1, -2)
+        f_swap = f_swap @ self.W_out
+        y_dist = dist.Categorical(logits=f_swap)
+        y_dist = y_dist.expand_by(self.y.shape[: -f.dim() + 1]).to_event(self.y.dim())
+        return pyro.sample(self._pyro_get_fullname("y"), y_dist, obs=self.y)
+
 
     def forward(self, iX, full_cov=False):
         self.set_mode("guide")
+        X = self.Xu @ self.W
         loc, cov = graph_conditional(
-            X=self.Xu@self.W,
+            X=X,
             graph=self.graph,
             iX=iX,
             kernel=self.kernel,
@@ -241,11 +258,12 @@ class GraphVariationalSparseGaussianProcess(VSGP):
             f_scale_tril=self.u_scale_tril,
             full_cov=full_cov,
             jitter=self.jitter,
-            whiten=True,
+            whiten=self.whiten,
         )
+        loc = self.W_out.T @ loc
         # loc = loc + (X[iX, :] @ self.W_mean).T
         return loc, cov
-        
+    
 
 
 
