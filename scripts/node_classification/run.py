@@ -81,29 +81,48 @@ def run(args):
         # a = a.cuda()
         model = model.cuda()
 
-    optimizer = getattr(torch.optim, args.optimizer)(
-        model.parameters(), 
-        lr=args.learning_rate, weight_decay=args.weight_decay,
+    optimizer = getattr(pyro.optim, args.optimizer)(
+        {"lr": args.learning_rate, "weight_decay": args.weight_decay,}
     )
 
-    loss_fn = pyro.infer.TraceMeanField_ELBO().differentiable_loss
+    svi = pyro.infer.SVI(
+        model.model,
+        model.guide,
+        optimizer,
+        loss=pyro.infer.Trace_ELBO(),
+    )
     
     for idx in range(args.n_epochs):
         model.train()
-        optimizer.zero_grad()
-        loss = loss_fn(model.model, model.guide)
-        loss.backward()
-        optimizer.step()
-
-        mean, cov = model(
-            iX=torch.where(g.ndata["val_mask"])[0]
+        loss = svi.step(
+            iX=torch.where(g.ndata["train_mask"])[0],
+            y=g.ndata["label"][g.ndata["train_mask"]],
         )
 
-        y_hat = mean.argmax(0)
+        predictive = pyro.infer.Predictive(
+            model.model,
+            guide=model.guide,
+            num_samples=1,
+            return_sites=("y",),
+        )
 
+        y_hat = predictive(
+            iX=torch.where(g.ndata["val_mask"])[0],
+            # y=g.ndata["label"][g.ndata["val_mask"]],
+        )["y"]
         y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy = (y == y_hat).sum() / y_hat.shape[0]
-        print(loss.item(), accuracy)
+        accuracy = (y_hat == y).float().mean()
+        print(accuracy)
+
+        # mean, cov = model(
+        #     iX=torch.where(g.ndata["val_mask"])[0]
+        # )
+
+        # y_hat = mean.argmax(0)
+
+        # y = g.ndata["label"][g.ndata["val_mask"]]
+        # accuracy = (y == y_hat).sum() / y_hat.shape[0]
+        # print(loss.item(), accuracy)
 
 if __name__ == "__main__":
     import argparse

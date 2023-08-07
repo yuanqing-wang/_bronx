@@ -146,7 +146,7 @@ def graph_conditional(
         var = W_S.pow(2).sum(dim=-1)
         return loc, var
 
-class GraphVariationalSparseGaussianProcess(VSGP):
+class GraphVariationalSparseGaussianProcess(pyro.nn.PyroModule):
     def __init__(
         self, 
         graph,
@@ -158,25 +158,31 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         in_features,
         hidden_features,
         embedding_features,
-        latent_shape=None,
         jitter=1e-6,
         whiten=False,
     ):
-        super().__init__(
-            X=X,
-            y=y,
-            kernel=kernel,
-            Xu=X,
-            likelihood=likelihood,
-            latent_shape=(hidden_features,),
-            jitter=jitter,
-            whiten=whiten,
-        )
+        super().__init__()
         self.graph = graph
         self.num_inducing_points = graph.number_of_nodes()
-        del self.Xu
+        self.X = X
+        self.y = y
+        self.kernel = kernel
+        self.likelihood = likelihood
+        self.jitter = jitter
+        self.whiten = whiten
         self.register_buffer("Xu", X)
         self.register_buffer("iX", iX)
+
+        self.latent_shape = torch.Size((hidden_features,))
+
+        M = self.Xu.size(0)
+        u_loc = self.Xu.new_zeros(self.latent_shape + (M,))
+        self.u_loc = torch.nn.Parameter(u_loc)
+
+        identity = eye_like(self.Xu, M)
+        u_scale_tril = identity.repeat(self.latent_shape + (1, 1))
+        self.u_scale_tril = pyro.nn.PyroParam(u_scale_tril, pyro.distributions.constraints.lower_cholesky)
+
         self.W = torch.nn.Parameter(
             torch.empty(X.shape[-1], embedding_features),
         )
@@ -187,16 +193,15 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         )
         torch.nn.init.normal_(self.W_out, std=1.0)
 
-
         self.rewire = Rewire(in_features, embedding_features)
+
 
     def set_data(self, X, y):
         self.X = X
         self.y = y
 
     @pyro_method
-    def model(self):
-        self.set_mode("model")
+    def model(self, iX, y=None):
         X = self.Xu @ self.W
         zero_loc = self.Xu.new_zeros(self.u_loc.shape)
         Luu = None
@@ -228,7 +233,7 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         f_loc, f_var = graph_conditional(
             X=X,
             graph=graph,
-            iX=self.iX,
+            iX=iX,
             kernel=self.kernel, 
             f_loc=self.u_loc, 
             f_scale_tril=self.u_scale_tril, 
@@ -243,26 +248,17 @@ class GraphVariationalSparseGaussianProcess(VSGP):
         f_swap = f_swap @ self.W_out
         y_dist = dist.Categorical(logits=f_swap)
         y_dist = y_dist.expand_by(self.y.shape[: -f.dim() + 1]).to_event(self.y.dim())
-        return pyro.sample(self._pyro_get_fullname("y"), y_dist, obs=self.y)
-
-
-    def forward(self, iX, full_cov=False):
-        self.set_mode("guide")
-        X = self.Xu @ self.W
-        loc, cov = graph_conditional(
-            X=X,
-            graph=self.graph,
-            iX=iX,
-            kernel=self.kernel,
-            f_loc=self.u_loc,
-            f_scale_tril=self.u_scale_tril,
-            full_cov=full_cov,
-            jitter=self.jitter,
-            whiten=self.whiten,
+        return pyro.sample(self._pyro_get_fullname("y"), y_dist, obs=y)
+    
+    @pyro_method
+    def guide(self, iX, y=None):
+        pyro.sample(
+            self._pyro_get_fullname("u"),
+            dist.MultivariateNormal(self.u_loc, scale_tril=self.u_scale_tril).to_event(
+                self.u_loc.dim() - 1
+            ),
         )
-        loc = self.W_out.T @ loc
-        # loc = loc + (X[iX, :] @ self.W_mean).T
-        return loc, cov
+
     
 
 
