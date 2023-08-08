@@ -66,7 +66,8 @@ def run(args):
         train_y=likelihood.transformed_targets,
         likelihood=likelihood,
         num_classes=likelihood.num_classes,
-        x=g.ndata["feat"],
+        features=g.ndata["feat"],
+        graph=g,
     )
 
     if torch.cuda.is_available():

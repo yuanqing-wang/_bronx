@@ -10,8 +10,25 @@ from gpytorch.variational import (
 from gpytorch.kernels import ScaleKernel, RBFKernel, LinearKernel, CosineKernel, MaternKernel
 from .variational import GraphVariationalStrategy
 
+@lru_cache(maxsize=1)
+def graph_exp(graph):
+    a = torch.zeros(
+        graph.number_of_nodes(),
+        graph.number_of_nodes(),
+        dtype=torch.float32,
+        device=graph.device,
+    )
+    src, dst = graph.edges()
+    a[src, dst] = 1
+    d = a.sum(-1, keepdims=True).clamp(min=1)
+    a = a / d
+    a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
+    a = torch.linalg.matrix_exp(a)
+    return a
+
+
 class ExactBronxModel(ExactGP):
-    def __init__(self, train_x, train_y, likelihood, num_classes, x):
+    def __init__(self, train_x, train_y, likelihood, num_classes, features, graph):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean(
             batch_shape=torch.Size((num_classes,)),
@@ -22,14 +39,19 @@ class ExactBronxModel(ExactGP):
         )
         self.likelihood = likelihood
         self.num_classes = num_classes
-        self.register_buffer("x", x)
+        self.register_buffer("features", features)
+        self.graph = graph
 
     def forward(self, x):
-        x = self.x[x.squeeze().long()]
-        mean = self.mean_module(x)
-        covar = self.covar_module(x)
+        a = graph_exp(self.graph)
+        mean = self.mean_module(self.features)
+        covar = self.covar_module(self.features)
+        covar = a @ covar @ a.T
+        covar = covar + 1e-3 * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
+        x = x.squeeze().long()
+        mean = mean[:, x]
+        covar = covar[:, x, :][:, :, x]
         return gpytorch.distributions.MultivariateNormal(mean, covar)
-
 
 class BronxModel(ApproximateGP):
     def __init__(
