@@ -25,7 +25,7 @@ def run(args):
 
     g = locals()[args.data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
-    g = dgl.add_self_loop(g)
+    # g = dgl.add_self_loop(g)
 
     if "train_mask" not in g.ndata:
         g.ndata["train_mask"] = torch.zeros(g.number_of_nodes(), dtype=torch.bool)
@@ -68,21 +68,15 @@ def run(args):
         num_classes=likelihood.num_classes,
         features=g.ndata["feat"],
         graph=g,
+        in_features=g.ndata["feat"].shape[-1],
+        hidden_features=args.hidden_features,
     )
 
     if torch.cuda.is_available():
         model = model.to("cuda:0")
         likelihood = likelihood.cuda()
 
-
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-
-    # optimizer = getattr(
-    #     torch.optim, args.optimizer
-    # )(list(model.hyperparameters()) + list(likelihood.parameters()), lr=args.learning_rate)
-
-    # ngd = gpytorch.optim.NGD(model.variational_parameters(), num_data=g.ndata["train_mask"].sum(), lr=0.01)
-    
     optimizer = getattr(
         torch.optim, args.optimizer
     )(
@@ -101,26 +95,23 @@ def run(args):
         loss.backward()
         optimizer.step()
 
-    with torch.no_grad():
-        model.eval()
-        likelihood.eval()
-        y_hat = model(torch.where(g.ndata["val_mask"])[0]).loc
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy = (y_hat.argmax(dim=0) == y).float().mean()
-        print(accuracy)
-
-
+        with torch.no_grad():
+            model.eval()
+            likelihood.eval()
+            y_hat = model(torch.where(g.ndata["val_mask"])[0]).loc
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy = (y_hat.argmax(dim=0) == y).float().mean()
+            print(accuracy)
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--hidden_features", type=int, default=16)
-    parser.add_argument("--embedding_features", type=int, default=64)
+    parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-10)
-    parser.add_argument("--optimizer", type=str, default="Adam")
-    parser.add_argument("--n_epochs", type=int, default=5)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--optimizer", type=str, default="RMSprop")
+    parser.add_argument("--n_epochs", type=int, default=1000)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()
     run(args)
