@@ -2,13 +2,34 @@ from functools import lru_cache
 import torch
 import dgl
 import gpytorch
-from gpytorch.models import ApproximateGP
+from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.variational import (
     VariationalStrategy,
     CholeskyVariationalDistribution,
 )
 from gpytorch.kernels import ScaleKernel, RBFKernel, LinearKernel, CosineKernel, MaternKernel
 from .variational import GraphVariationalStrategy
+
+class ExactBronxModel(ExactGP):
+    def __init__(self, train_x, train_y, likelihood, num_classes, x):
+        super().__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean(
+            batch_shape=torch.Size((num_classes,)),
+        )
+        self.covar_module = ScaleKernel(
+            RBFKernel(),
+            batch_shape=torch.Size((num_classes,)),
+        )
+        self.likelihood = likelihood
+        self.num_classes = num_classes
+        self.register_buffer("x", x)
+
+    def forward(self, x):
+        x = self.x[x.squeeze().long()]
+        mean = self.mean_module(x)
+        covar = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean, covar)
+
 
 class BronxModel(ApproximateGP):
     def __init__(
