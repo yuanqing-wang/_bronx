@@ -3,13 +3,12 @@ import torch
 import gpytorch
 # gpytorch.settings.debug._default = False
 gpytorch.settings.lazily_evaluate_kernels._default = False
-import linear_operator
-# linear_operator.settings.cholesky_jitter._global_float_value = 1e-4
-# linear_operator.settings.cholesky_jitter._global_double_value = 1e-4
-
 import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
+import pyro
+from pyro.infer.mcmc import NUTS, MCMC, HMC
+from gpytorch.priors import LogNormalPrior, NormalPrior, UniformPrior
 
 def run(args):
     torch.cuda.empty_cache()
@@ -72,36 +71,77 @@ def run(args):
         hidden_features=args.hidden_features,
     )
 
+
     if torch.cuda.is_available():
         model = model.to("cuda:0")
         likelihood = likelihood.cuda()
 
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-    optimizer = getattr(
-        torch.optim, args.optimizer
-    )(
-        list(model.hyperparameters()) + list(likelihood.parameters()), 
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
+    model.covar_module.base_kernel.register_prior(
+        "lengthscale_prior", 
+        UniformPrior(
+            torch.tensor(0.01, device=g.device), 
+            torch.tensor(0.5, device=g.device),
+        ), 
+        "lengthscale"
+    )
+    model.covar_module.register_prior(
+        "outputscale_prior", 
+        UniformPrior(
+            torch.tensor(1.0, device=g.device), 
+            torch.tensor(2.0, device=g.device), 
+        ), 
+        "outputscale"
+    )
+    likelihood.register_prior(
+        "noise_prior", 
+        UniformPrior(
+            torch.tensor(0.01, device=g.device),
+            torch.tensor(0.5, device=g.device),
+        ), 
+        "noise"
     )
 
-    for idx in range(args.n_epochs):
-        model.train()
-        likelihood.train()
-        optimizer.zero_grad()
-        output = model(torch.where(g.ndata["train_mask"])[0])
-        loss = -mll(output, target=likelihood.transformed_targets)
-        loss = loss.sum()
-        loss.backward()
-        optimizer.step()
+    def pyro_model(x, y):
+        with gpytorch.settings.fast_computations(False, False, False):
+            sampled_model = model.pyro_sample_from_prior()
+            output = sampled_model.likelihood(sampled_model(x))
+            pyro.sample("obs", output, obs=y)
+        return y
 
-        with torch.no_grad():
-            model.eval()
-            likelihood.eval()
-            y_hat = model(torch.where(g.ndata["val_mask"])[0]).loc
-            y = g.ndata["label"][g.ndata["val_mask"]]
-            accuracy = (y_hat.argmax(dim=0) == y).float().mean()
-            print(accuracy)
+    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+
+    nuts_kernel = NUTS(pyro_model)
+    mcmc_run = MCMC(nuts_kernel, num_samples=200, warmup_steps=50)
+    x = torch.where(g.ndata["train_mask"])[0]
+    y = likelihood.transformed_targets
+
+    mcmc_run.run(x, y)
+
+    # optimizer = getattr(
+    #     torch.optim, args.optimizer
+    # )(
+    #     list(model.hyperparameters()) + list(likelihood.parameters()), 
+    #     lr=args.learning_rate,
+    #     weight_decay=args.weight_decay,
+    # )
+
+    # for idx in range(args.n_epochs):
+    #     model.train()
+    #     likelihood.train()
+    #     optimizer.zero_grad()
+    #     output = model(torch.where(g.ndata["train_mask"])[0])
+    #     loss = -mll(output, target=likelihood.transformed_targets)
+    #     loss = loss.sum()
+    #     loss.backward()
+    #     optimizer.step()
+
+    #     with torch.no_grad():
+    #         model.eval()
+    #         likelihood.eval()
+    #         y_hat = model(torch.where(g.ndata["val_mask"])[0]).loc
+    #         y = g.ndata["label"][g.ndata["val_mask"]]
+    #         accuracy = (y_hat.argmax(dim=0) == y).float().mean()
+    #         print(accuracy)
 
 if __name__ == "__main__":
     import argparse
