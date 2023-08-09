@@ -9,7 +9,7 @@ from gpytorch.variational import (
 )
 from gpytorch.kernels import (
     ScaleKernel, RBFKernel, LinearKernel, CosineKernel, MaternKernel,
-    GridInterpolationKernel,
+    GridInterpolationKernel, SpectralMixtureKernel, GaussianSymmetrizedKLKernel
 )
 from .variational import GraphVariationalStrategy
 from dgl.nn.functional import edge_softmax
@@ -70,13 +70,13 @@ class ExactBronxModel(ExactGP):
             features, graph, in_features, hidden_features,
         ):
         super().__init__(train_x, train_y, likelihood)
+
         self.mean_module = gpytorch.means.ZeroMean(
             batch_shape=torch.Size((num_classes,)),
         )
 
         self.covar_module = ScaleKernel(
-            RBFKernel(
-                ard_num_dims=hidden_features, 
+            LinearKernel(
                 batch_shape=torch.Size((num_classes,))
             ),
             batch_shape=torch.Size([num_classes]),
@@ -91,8 +91,10 @@ class ExactBronxModel(ExactGP):
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(lower_bound=-1., upper_bound=1.)
 
     def forward(self, x):
-        h = self.fc(self.features).tanh()
+        h = self.fc(self.features)
         h = self.scale_to_bounds(h)
+        h = h - h.mean(0, keepdims=True)
+        h = h / h.std(0, keepdims=True)
         a = self.rewire(h, self.graph)
         mean = self.mean_module(h)
         covar = self.covar_module(h)
