@@ -6,6 +6,7 @@ from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.variational import (
     VariationalStrategy,
     CholeskyVariationalDistribution,
+    IndependentMultitaskVariationalStrategy,
 )
 from gpytorch.kernels import (
     ScaleKernel, RBFKernel, LinearKernel, CosineKernel, MaternKernel,
@@ -105,20 +106,19 @@ class ExactBronxModel(ExactGP):
         covar = covar[:, x, :][:, :, x]
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
-class BronxModel(ApproximateGP):
+class ApproximateBronxModel(ApproximateGP):
     def __init__(
             self,
-            inducing_points: torch.Tensor,
-            inducing_indices: torch.Tensor,
+            features,
             graph: dgl.DGLGraph,
-            hidden_features: int = 32,
-            embedding_features: int = 32,
+            num_classes: int,
             learn_inducing_locations: bool = False,
     ):
 
-        batch_shape = torch.Size([hidden_features])
+        inducing_points = graph.nodes().float()
+        batch_shape = torch.Size([num_classes])
         variational_distribution = CholeskyVariationalDistribution(
-            inducing_points.size(-2),
+            inducing_points.size(-1),
             batch_shape=batch_shape,
         )
 
@@ -128,35 +128,34 @@ class BronxModel(ApproximateGP):
             variational_distribution=variational_distribution,
             learn_inducing_locations=learn_inducing_locations,
         )
-        
-        # variational_strategy = GraphVariationalStrategy(
-        #     self,
-        #     inducing_points=inducing_points,
-        #     variational_distribution=variational_distribution,
-        #     graph=graph,
-        #     inducing_indices=inducing_indices,
-        #     learn_inducing_locations=learn_inducing_locations,
-        # )
-
-        variational_strategy = VariationalStrategy(
-            self,
-            inducing_points=inducing_points,
-            variational_distribution=variational_distribution,
-            learn_inducing_locations=learn_inducing_locations,
+        variational_strategy = IndependentMultitaskVariationalStrategy(
+            variational_strategy, 
+            num_tasks=num_classes,
         )
 
         super().__init__(variational_strategy)
         self.mean_module = gpytorch.means.ZeroMean()
-        self.covar_module = ScaleKernel(RBFKernel())
-        # self.fc = torch.nn.Linear(inducing_points.size(-1), embedding_features, bias=False)
-        # torch.nn.init.normal_(self.fc.weight, std=1.0)
+        self.covar_module = ScaleKernel(
+            RBFKernel(batch_shape=batch_shape),
+            batch_shape=batch_shape,
+        )
+
+        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(lower_bound=-1., upper_bound=1.)
+        self.register_buffer("features", features)
         
     def forward(self, x):
-        # x = self.fc(x)# .tanh()
-        mean = self.mean_module(x)
-        covar = self.covar_module(x)
-        result = gpytorch.distributions.MultivariateNormal(mean, covar)
-        return result
+        # h = self.fc(self.features)
+        h = self.features
+        h = self.scale_to_bounds(h)
+        # a = self.rewire(h, self.graph)
+        mean = self.mean_module(h)
+        covar = self.covar_module(h)
+        # covar = a @ covar @ a.T
+        covar = covar + 1e-3 * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
+        x = x.squeeze().long()
+        mean = mean[x]
+        covar = covar[:, x, :][:, :, x]
+        return gpytorch.distributions.MultivariateNormal(mean, covar)
     
     # def to(self, device):
     #     self = super().to(device)
