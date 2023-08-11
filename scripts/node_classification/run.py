@@ -98,14 +98,14 @@ def run(args):
         loss.backward()
         optimizer.step()
 
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
-        model.eval()
-        likelihood.eval()
-        y_hat = model(torch.where(g.ndata["val_mask"])[0]).loc
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy = (y_hat.argmax(dim=0) == y).float().mean().item()
-        if __name__ == "__main__":
-            print(accuracy)
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            model.eval()
+            likelihood.eval()
+            y_hat = model(torch.where(g.ndata["val_mask"])[0]).loc
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy = (y_hat.argmax(dim=0) == y).float().mean().item()
+            if __name__ == "__main__":
+                print(accuracy)
     return accuracy
 
 if __name__ == "__main__":
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str, default="RMSprop")
     parser.add_argument("--n_epochs", type=int, default=50)
     parser.add_argument("--activation", type=str, default="silu")
-    parser.add_argument("--log_sigma", type=float, default=-1.0)
+    parser.add_argument("--log_sigma", type=float, default=0.0)
     parser.add_argument("--t", type=float, default=3.0)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()

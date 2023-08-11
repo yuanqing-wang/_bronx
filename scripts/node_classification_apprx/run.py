@@ -70,6 +70,9 @@ def run(args):
         hidden_features=args.hidden_features,
         graph=g,
         num_classes=g.ndata["label"].max()+1,
+        t=args.t,
+        log_sigma=args.log_sigma,
+        activation=getattr(torch.nn.functional, args.activation),
     )
 
     if torch.cuda.is_available():
@@ -113,5 +116,8 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--n_epochs", type=int, default=500)
     parser.add_argument("--test", type=int, default=1)
+    parser.add_argument("--t", type=float, default=1.0)
+    parser.add_argument("--log_sigma", type=float, default=0.0)
+    parser.add_argument("--activation", type=str, default="tanh")
     args = parser.parse_args()
     run(args)

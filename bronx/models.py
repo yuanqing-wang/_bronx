@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Callable
 import torch
 import dgl
 import gpytorch
@@ -74,7 +75,7 @@ class ExactBronxModel(ExactGP):
             batch_shape=torch.Size((num_classes,)),
         )
 
-        self.covar_module = LinearKernel()
+        self.covar_module = ScaleKernel(GaussianSymmetrizedKLKernel())
         self.rewire = Rewire(
             hidden_features, hidden_features, t=t,
         )
@@ -93,8 +94,9 @@ class ExactBronxModel(ExactGP):
         h = self.activation(h)
         a = self.rewire(h, self.graph)
         mean = self.mean_module(h)
-        covar = self.covar_module(a @ h)
-        covar = covar
+        covar = self.covar_module(h)
+        covar = a @ covar @ a.t()
+        covar = covar \
         + self.log_sigma.exp() \
         * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
         x = x.squeeze().long()
@@ -112,6 +114,9 @@ class ApproximateBronxModel(ApproximateGP):
             hidden_features: int,
             num_classes: int,
             learn_inducing_locations: bool = False,
+            t: float=1.0,
+            log_sigma: float=0.0,
+            activation: Callable=torch.nn.functional.silu,
     ):
 
         batch_shape = torch.Size([num_classes])
@@ -132,37 +137,35 @@ class ApproximateBronxModel(ApproximateGP):
         )
 
         super().__init__(variational_strategy)
-        self.mean_module = gpytorch.means.ZeroMean()
-        self.covar_module = ScaleKernel(
-            LinearKernel(batch_shape=batch_shape),
-            batch_shape=batch_shape,
+        self.mean_module = gpytorch.means.ZeroMean(
+            batch_shape=torch.Size((num_classes,)),
         )
 
-        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(lower_bound=-1., upper_bound=1.)
+        self.covar_module = LinearKernel()
+        self.rewire = Rewire(
+            hidden_features, hidden_features, t=t,
+        )
+        self.num_classes = num_classes
         self.register_buffer("features", features)
-        self.fc = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.rewire = Rewire(hidden_features, hidden_features)
         self.graph = graph
-        
-    def forward(self, x):
-        h = self.features
-        h = self.fc(h)
-        h = self.scale_to_bounds(h)
-        a = self.rewire(h, self.graph)
-        # h = a @ h
+        self.fc = torch.nn.Linear(in_features, hidden_features, bias=False)
+        self.norm = torch.nn.LayerNorm(hidden_features)
+        self.log_sigma = torch.nn.Parameter(torch.tensor(log_sigma))
+        self.activation = activation
 
-        mean = self.mean_module(h) * a
-        covar = self.covar_module(h)
-        # covar = a @ covar @ a.T
-        covar = covar + 1e-3 * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
+    def forward(self, x):
+        h = self.fc(self.features)
+        h = self.norm(h)
+        h = self.activation(h)
+        a = self.rewire(h, self.graph)
+        mean = self.mean_module(h)
+        covar = self.covar_module(a @ h)
+        covar = covar \
+        + self.log_sigma.exp() \
+        * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
         x = x.squeeze().long()
         mean = mean[..., x]
         covar = covar[..., x, :][..., :, x]
         return gpytorch.distributions.MultivariateNormal(mean, covar)
-    
-    # def to(self, device):
-    #     self = super().to(device)
-    #     self.variational_strategy.inducing_points = self.variational_strategy.inducing_points.to(device)
-    #     self.variational_strategy.graph = self.variational_strategy.graph.to(device)
-    #     return self
+
     
