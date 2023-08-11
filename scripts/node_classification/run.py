@@ -57,7 +57,7 @@ def run(args):
 
     likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
         targets=g.ndata["label"][g.ndata["train_mask"]],
-        learn_additional_noise=True,
+        learn_additional_noise=False,
     )
 
     model = ExactBronxModel(
@@ -147,10 +147,10 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--hidden_features", type=int, default=8)
+    parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--optimizer", type=str, default="Adam")
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--optimizer", type=str, default="RMSprop")
     parser.add_argument("--n_epochs", type=int, default=1000)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()

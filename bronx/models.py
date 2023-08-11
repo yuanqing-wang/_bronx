@@ -6,11 +6,10 @@ from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.variational import (
     VariationalStrategy,
     CholeskyVariationalDistribution,
-    IndependentMultitaskVariationalStrategy,
 )
 from gpytorch.kernels import (
     ScaleKernel, RBFKernel, LinearKernel, CosineKernel, MaternKernel,
-    GridInterpolationKernel, SpectralMixtureKernel, GaussianSymmetrizedKLKernel
+    GridInterpolationKernel,
 )
 from .variational import GraphVariationalStrategy
 from dgl.nn.functional import edge_softmax
@@ -71,13 +70,13 @@ class ExactBronxModel(ExactGP):
             features, graph, in_features, hidden_features,
         ):
         super().__init__(train_x, train_y, likelihood)
-
         self.mean_module = gpytorch.means.ZeroMean(
             batch_shape=torch.Size((num_classes,)),
         )
 
         self.covar_module = ScaleKernel(
-            LinearKernel(
+            RBFKernel(
+                ard_num_dims=hidden_features, 
                 batch_shape=torch.Size((num_classes,))
             ),
             batch_shape=torch.Size([num_classes]),
@@ -92,10 +91,8 @@ class ExactBronxModel(ExactGP):
         self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(lower_bound=-1., upper_bound=1.)
 
     def forward(self, x):
-        h = self.fc(self.features)
+        h = self.fc(self.features).tanh()
         h = self.scale_to_bounds(h)
-        h = h - h.mean(0, keepdims=True)
-        h = h / h.std(0, keepdims=True)
         a = self.rewire(h, self.graph)
         mean = self.mean_module(h)
         covar = self.covar_module(h)
@@ -106,19 +103,20 @@ class ExactBronxModel(ExactGP):
         covar = covar[:, x, :][:, :, x]
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
-class ApproximateBronxModel(ApproximateGP):
+class BronxModel(ApproximateGP):
     def __init__(
             self,
-            features,
+            inducing_points: torch.Tensor,
+            inducing_indices: torch.Tensor,
             graph: dgl.DGLGraph,
-            num_classes: int,
+            hidden_features: int = 32,
+            embedding_features: int = 32,
             learn_inducing_locations: bool = False,
     ):
 
-        inducing_points = graph.nodes().float()
-        batch_shape = torch.Size([num_classes])
+        batch_shape = torch.Size([hidden_features])
         variational_distribution = CholeskyVariationalDistribution(
-            inducing_points.size(-1),
+            inducing_points.size(-2),
             batch_shape=batch_shape,
         )
 
@@ -128,34 +126,35 @@ class ApproximateBronxModel(ApproximateGP):
             variational_distribution=variational_distribution,
             learn_inducing_locations=learn_inducing_locations,
         )
-        variational_strategy = IndependentMultitaskVariationalStrategy(
-            variational_strategy, 
-            num_tasks=num_classes,
+        
+        # variational_strategy = GraphVariationalStrategy(
+        #     self,
+        #     inducing_points=inducing_points,
+        #     variational_distribution=variational_distribution,
+        #     graph=graph,
+        #     inducing_indices=inducing_indices,
+        #     learn_inducing_locations=learn_inducing_locations,
+        # )
+
+        variational_strategy = VariationalStrategy(
+            self,
+            inducing_points=inducing_points,
+            variational_distribution=variational_distribution,
+            learn_inducing_locations=learn_inducing_locations,
         )
 
         super().__init__(variational_strategy)
         self.mean_module = gpytorch.means.ZeroMean()
-        self.covar_module = ScaleKernel(
-            RBFKernel(batch_shape=batch_shape),
-            batch_shape=batch_shape,
-        )
-
-        self.scale_to_bounds = gpytorch.utils.grid.ScaleToBounds(lower_bound=-1., upper_bound=1.)
-        self.register_buffer("features", features)
+        self.covar_module = ScaleKernel(RBFKernel())
+        # self.fc = torch.nn.Linear(inducing_points.size(-1), embedding_features, bias=False)
+        # torch.nn.init.normal_(self.fc.weight, std=1.0)
         
     def forward(self, x):
-        # h = self.fc(self.features)
-        h = self.features
-        h = self.scale_to_bounds(h)
-        # a = self.rewire(h, self.graph)
-        mean = self.mean_module(h)
-        covar = self.covar_module(h)
-        # covar = a @ covar @ a.T
-        covar = covar + 1e-3 * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
-        x = x.squeeze().long()
-        mean = mean[x]
-        covar = covar[:, x, :][:, :, x]
-        return gpytorch.distributions.MultivariateNormal(mean, covar)
+        # x = self.fc(x)# .tanh()
+        mean = self.mean_module(x)
+        covar = self.covar_module(x)
+        result = gpytorch.distributions.MultivariateNormal(mean, covar)
+        return result
     
     # def to(self, device):
     #     self = super().to(device)
