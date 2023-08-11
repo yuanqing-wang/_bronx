@@ -7,6 +7,7 @@ from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.variational import (
     VariationalStrategy,
     CholeskyVariationalDistribution,
+    NaturalVariationalDistribution,
     MeanFieldVariationalDistribution,
     IndependentMultitaskVariationalStrategy,
 )
@@ -120,7 +121,7 @@ class ApproximateBronxModel(ApproximateGP):
     ):
 
         batch_shape = torch.Size([num_classes])
-        variational_distribution = MeanFieldVariationalDistribution(
+        variational_distribution = NaturalVariationalDistribution(
             inducing_points.size(-1),
             batch_shape=batch_shape,
         )
@@ -131,6 +132,7 @@ class ApproximateBronxModel(ApproximateGP):
             variational_distribution=variational_distribution,
             learn_inducing_locations=learn_inducing_locations,
         )
+        
         variational_strategy = IndependentMultitaskVariationalStrategy(
             variational_strategy, 
             num_tasks=num_classes,
@@ -141,7 +143,7 @@ class ApproximateBronxModel(ApproximateGP):
             batch_shape=torch.Size((num_classes,)),
         )
 
-        self.covar_module = LinearKernel()
+        self.covar_module = LinearKernel(batch_shape=batch_shape)
         self.rewire = Rewire(
             hidden_features, hidden_features, t=t,
         )

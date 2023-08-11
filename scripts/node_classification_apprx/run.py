@@ -57,12 +57,13 @@ def run(args):
         g = g.to("cuda:0")
 
     likelihood = gpytorch.likelihoods.SoftmaxLikelihood(
-        num_features=g.ndata["label"].max()+1,
+        num_features=g.ndata["label"].max() + 1,
         num_classes=g.ndata["label"].max()+1,
         mixing_weights=None,
     )
 
     inducing_points = torch.where(g.ndata["train_mask"])[0].float()
+    # inducing_points = g.nodes().float()
     model = ApproximateBronxModel(
         features=g.ndata["feat"],
         inducing_points=inducing_points,
@@ -79,24 +80,27 @@ def run(args):
         model = model.to("cuda:0")
         likelihood = likelihood.cuda()
 
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["val_mask"].sum())
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["train_mask"].sum())
     optimizer = getattr(
         torch.optim, args.optimizer
     )(
-        list(model.parameters()) + list(likelihood.parameters()), 
+        list(model.hyperparameters()) + list(likelihood.parameters()), 
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
+    ngd = gpytorch.optim.NGD(model.variational_parameters(), num_data=g.ndata["train_mask"].sum())
 
     for idx in range(args.n_epochs):
         model.train()
         likelihood.train()
         optimizer.zero_grad()
+        ngd.zero_grad()
         output = model(torch.where(g.ndata["train_mask"])[0])
         loss = -mll(output, g.ndata["label"][g.ndata["train_mask"]])
         loss = loss.sum()
         loss.backward()
         optimizer.step()
+        ngd.step()
 
         model.eval()
         likelihood.eval()
@@ -117,7 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_epochs", type=int, default=500)
     parser.add_argument("--test", type=int, default=1)
     parser.add_argument("--t", type=float, default=1.0)
-    parser.add_argument("--log_sigma", type=float, default=0.0)
-    parser.add_argument("--activation", type=str, default="tanh")
+    parser.add_argument("--log_sigma", type=float, default=-1.0)
+    parser.add_argument("--activation", type=str, default="silu")
     args = parser.parse_args()
     run(args)
