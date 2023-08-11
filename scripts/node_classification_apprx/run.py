@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import gpytorch
-# gpytorch.settings.debug._default = False
+gpytorch.settings.debug._default = False
 gpytorch.settings.lazily_evaluate_kernels._default = False
 import linear_operator
 # linear_operator.settings.cholesky_jitter._global_float_value = 1e-4
@@ -52,7 +52,9 @@ def run(args):
         g.ndata["val_mask"][val_idxs] = True
         g.ndata["test_mask"][test_idxs] = True
 
-    from bronx.models import ApproximateBronxModel
+    from bronx.models import ApproximateBronxLayer, ApproximateBronxModel
+    from gpytorch.mlls import DeepApproximateMLL
+
     if torch.cuda.is_available():
         g = g.to("cuda:0")
 
@@ -70,17 +72,24 @@ def run(args):
         in_features=g.ndata["feat"].shape[-1],
         hidden_features=args.hidden_features,
         graph=g,
-        num_classes=g.ndata["label"].max()+1,
+        out_features=g.ndata["label"].max()+1,
         t=args.t,
         log_sigma=args.log_sigma,
         activation=getattr(torch.nn.functional, args.activation),
+        likelihood=likelihood,
     )
 
     if torch.cuda.is_available():
         model = model.to("cuda:0")
-        likelihood = likelihood.cuda()
 
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["train_mask"].sum())
+    mll = DeepApproximateMLL(
+        gpytorch.mlls.VariationalELBO(
+            model.likelihood, 
+            model, 
+            num_data=g.ndata["train_mask"].sum()
+        )
+    )
+
     optimizer = getattr(
         torch.optim, args.optimizer
     )(

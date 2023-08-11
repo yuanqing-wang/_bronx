@@ -1,9 +1,10 @@
 from functools import lru_cache
-from typing import Callable
+from typing import Optional, Callable
 import torch
 import dgl
 import gpytorch
 from gpytorch.models import ApproximateGP, ExactGP
+from gpytorch.models.deep_gps import DeepGPLayer, DeepGP
 from gpytorch.variational import (
     VariationalStrategy,
     CholeskyVariationalDistribution,
@@ -105,7 +106,7 @@ class ExactBronxModel(ExactGP):
         covar = covar[..., x, :][..., :, x]
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
-class ApproximateBronxModel(ApproximateGP):
+class ApproximateBronxLayer(DeepGPLayer):
     def __init__(
             self,
             features,
@@ -113,14 +114,14 @@ class ApproximateBronxModel(ApproximateGP):
             graph: dgl.DGLGraph,
             in_features: int,
             hidden_features: int,
-            num_classes: int,
+            out_features: int,
             learn_inducing_locations: bool = False,
             t: float=1.0,
             log_sigma: float=0.0,
             activation: Callable=torch.nn.functional.silu,
     ):
 
-        batch_shape = torch.Size([num_classes])
+        batch_shape = torch.Size([out_features])
         variational_distribution = NaturalVariationalDistribution(
             inducing_points.size(-1),
             batch_shape=batch_shape,
@@ -132,22 +133,21 @@ class ApproximateBronxModel(ApproximateGP):
             variational_distribution=variational_distribution,
             learn_inducing_locations=learn_inducing_locations,
         )
-        
+
         variational_strategy = IndependentMultitaskVariationalStrategy(
             variational_strategy, 
-            num_tasks=num_classes,
+            num_tasks=out_features,
         )
 
-        super().__init__(variational_strategy)
+        super().__init__(variational_strategy, in_features, out_features)
         self.mean_module = gpytorch.means.ZeroMean(
-            batch_shape=torch.Size((num_classes,)),
+            batch_shape=torch.Size((out_features,)),
         )
 
         self.covar_module = LinearKernel(batch_shape=batch_shape)
         self.rewire = Rewire(
             hidden_features, hidden_features, t=t,
         )
-        self.num_classes = num_classes
         self.register_buffer("features", features)
         self.graph = graph
         self.fc = torch.nn.Linear(in_features, hidden_features, bias=False)
@@ -170,4 +170,52 @@ class ApproximateBronxModel(ApproximateGP):
         covar = covar[..., x, :][..., :, x]
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
-    
+class ApproximateBronxModel(DeepGP):
+    def __init__(
+        self,
+        features,
+        inducing_points,
+        graph: dgl.DGLGraph,
+        in_features: int,
+        hidden_features: int,
+        out_features: int,
+        learn_inducing_locations: bool = False,
+        t: float=1.0,
+        log_sigma: float=0.0,
+        activation: Callable=torch.nn.functional.silu,
+        likelihood: Optional=None,
+    ):
+        super().__init__()
+
+        self.layer0 = ApproximateBronxLayer(
+            features=features,
+            inducing_points=inducing_points,
+            graph=graph,
+            in_features=in_features,
+            hidden_features=hidden_features,
+            out_features=hidden_features,
+            learn_inducing_locations=learn_inducing_locations,
+            t=t,
+            log_sigma=log_sigma,
+            activation=activation,
+        )
+
+        self.layer1 = ApproximateBronxLayer(
+            features=features,
+            inducing_points=inducing_points,
+            graph=graph,
+            in_features=in_features,
+            hidden_features=hidden_features,
+            out_features=hidden_features,
+            learn_inducing_locations=learn_inducing_locations,
+            t=t,
+            log_sigma=log_sigma,
+            activation=activation,
+        )
+
+        self.likelihood = likelihood
+
+    def forward(self, x):
+        h = self.layer0(x)
+        h = self.layer1(h)
+        return h
