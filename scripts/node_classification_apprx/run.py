@@ -62,7 +62,12 @@ def run(args):
         mixing_weights=None,
     )
 
-    inducing_points = torch.where(g.ndata["train_mask"])[0].float()
+    inducing_points = torch.cat(
+        [
+            torch.where(g.ndata["train_mask"])[0].float(), 
+            torch.where(g.ndata["val_mask"])[0].float(),
+        ]
+    )
     # inducing_points = g.nodes().float()
     model = ApproximateBronxModel(
         features=g.ndata["feat"],
@@ -80,7 +85,7 @@ def run(args):
         model = model.to("cuda:0")
         likelihood = likelihood.cuda()
 
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["train_mask"].sum())
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["val_mask"].sum())
     optimizer = getattr(
         torch.optim, args.optimizer
     )(
@@ -88,7 +93,10 @@ def run(args):
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
-    ngd = gpytorch.optim.NGD(model.variational_parameters(), num_data=g.ndata["train_mask"].sum())
+    ngd = gpytorch.optim.NGD(
+        model.variational_parameters(), num_data=g.ndata["val_mask"].sum(),
+        lr=0.1,
+    )
 
     for idx in range(args.n_epochs):
         model.train()
@@ -116,12 +124,12 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-10)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--n_epochs", type=int, default=500)
     parser.add_argument("--test", type=int, default=1)
-    parser.add_argument("--t", type=float, default=1.0)
-    parser.add_argument("--log_sigma", type=float, default=-1.0)
-    parser.add_argument("--activation", type=str, default="silu")
+    parser.add_argument("--t", type=float, default=2.0)
+    parser.add_argument("--log_sigma", type=float, default=1.0)
+    parser.add_argument("--activation", type=str, default="sigmoid")
     args = parser.parse_args()
     run(args)

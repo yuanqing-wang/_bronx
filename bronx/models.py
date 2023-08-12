@@ -24,7 +24,7 @@ class Rewire(torch.nn.Module):
         super().__init__()
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_q = torch.nn.Linear(in_features, out_features, bias=False)
-        self.t = torch.nn.Parameter(torch.tensor(t))
+        self.register_buffer("t", torch.tensor(t))
 
     def forward(self, feat, graph):
         graph = graph.local_var()
@@ -62,7 +62,6 @@ def graph_exp(graph):
     a = a - torch.eye(a.shape[0], dtype=a.dtype, device=a.device)
     a = torch.linalg.matrix_exp(a)
     return a
-
 
 class ExactBronxModel(ExactGP):
     def __init__(
@@ -143,7 +142,7 @@ class ApproximateBronxModel(ApproximateGP):
             batch_shape=torch.Size((num_classes,)),
         )
 
-        self.covar_module = LinearKernel(batch_shape=batch_shape)
+        self.covar_module = LinearKernel()
         self.rewire = Rewire(
             hidden_features, hidden_features, t=t,
         )
@@ -152,7 +151,7 @@ class ApproximateBronxModel(ApproximateGP):
         self.graph = graph
         self.fc = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.norm = torch.nn.LayerNorm(hidden_features)
-        self.log_sigma = torch.nn.Parameter(torch.tensor(log_sigma))
+        self.register_buffer("log_sigma", torch.tensor(log_sigma))
         self.activation = activation
 
     def forward(self, x):
@@ -160,8 +159,9 @@ class ApproximateBronxModel(ApproximateGP):
         h = self.norm(h)
         h = self.activation(h)
         a = self.rewire(h, self.graph)
+        h = a @ h
         mean = self.mean_module(h)
-        covar = self.covar_module(a @ h)
+        covar = self.covar_module(h)
         covar = covar \
         + self.log_sigma.exp() \
         * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
