@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Callable
 import torch
 import dgl
+from dgl import function as fn
 import gpytorch
 from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.variational import (
@@ -18,13 +19,74 @@ from gpytorch.kernels import (
 )
 from .variational import GraphVariationalStrategy
 from dgl.nn.functional import edge_softmax
+from torchdiffeq import odeint_adjoint as odeint
+
+class ODEFunc(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._g = None
+        self._e = None
+
+    @property
+    def g(self):
+        return self._g
+
+    @property
+    def e(self):
+        return self._e
+    
+    @g.setter
+    def g(self, g):
+        self._g = g
+
+    @e.setter
+    def e(self, e):
+        self._e = e
+
+    def forward(self, t, x):
+        g = self.g
+        e = self.e
+        g = g.local_var()
+        g.edata["e"] = e
+        g.ndata["x"] = x
+        g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
+        return g.ndata["x"]
+
+class ODEBlock(torch.nn.Module):
+    def __init__(self, odefunc):
+        super().__init__()
+        self.odefunc = odefunc
+
+    def forward(self, g, h, e, t=1.0):
+        g = g.local_var()
+        self.odefunc.g = g
+        self.odefunc.e = e
+        t = torch.tensor([0, t], device=h.device, dtype=h.dtype)
+        y = odeint(self.odefunc, h, t, method="rk4")[1]
+        return y
+
+class LinearDiffusion(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ode_block = ODEBlock(ODEFunc())
+
+    def forward(self, g, h, e, t=1.0, gamma=-1.0):
+        g = g.local_var()
+        g.edata["e"] = e
+        src, dst = g.edges()
+        g.edata["e"][src==dst, ...] = gamma
+        result = self.ode_block(g, h, g.edata["e"], t=t)
+        return result
 
 class Rewire(torch.nn.Module):
-    def __init__(self, in_features, out_features, t):
+    def __init__(self, in_features, out_features, t=1.0, gamma=-1.0):
         super().__init__()
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_q = torch.nn.Linear(in_features, out_features, bias=False)
         self.register_buffer("t", torch.tensor(t))
+        self.register_buffer("gamma", torch.tensor(gamma))
+        # self.linear_diffusion = LinearDiffusion()
+        self.dropout = torch.nn.Dropout(0.5)
 
     def forward(self, feat, graph):
         graph = graph.local_var()
@@ -33,19 +95,11 @@ class Rewire(torch.nn.Module):
         graph.ndata["k"] = k
         graph.ndata["q"] = q
         graph.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
-        e = edge_softmax(graph, graph.edata["e"]).squeeze(-1)
-        a = torch.zeros(
-            graph.number_of_nodes(),
-            graph.number_of_nodes(),
-            dtype=torch.float32,
-            device=graph.device,
-        )
-        src, dst = graph.edges()
-        a[src, dst] = e
-        a = a - torch.eye(a.shape[-1], dtype=a.dtype, device=a.device)
-        a = a * self.t.exp()
-        a = torch.linalg.matrix_exp(a)
-        return a
+        e = graph.edata["e"]
+        e = self.dropout(e)
+        e = edge_softmax(graph, e)
+        h = self.linear_diffusion(graph, feat, e, t=self.t, gamma=self.gamma)
+        return h
 
 @lru_cache(maxsize=1)
 def graph_exp(graph):
@@ -66,7 +120,7 @@ def graph_exp(graph):
 class ExactBronxModel(ExactGP):
     def __init__(
             self, train_x, train_y, likelihood, num_classes, 
-            features, graph, in_features, hidden_features, t, log_sigma,
+            features, graph, in_features, hidden_features, t, gamma, log_sigma,
             activation,
         ):
         super().__init__(train_x, train_y, likelihood)
@@ -77,7 +131,7 @@ class ExactBronxModel(ExactGP):
 
         self.covar_module = ScaleKernel(GaussianSymmetrizedKLKernel())
         self.rewire = Rewire(
-            hidden_features, hidden_features, t=t,
+            hidden_features, hidden_features, t=t, gamma=gamma,
         )
         self.likelihood = likelihood
         self.num_classes = num_classes
@@ -115,6 +169,7 @@ class ApproximateBronxModel(ApproximateGP):
             num_classes: int,
             learn_inducing_locations: bool = False,
             t: float=1.0,
+            gamma: float=-1.0,
             log_sigma: float=0.0,
             activation: Callable=torch.nn.functional.silu,
     ):
@@ -158,8 +213,7 @@ class ApproximateBronxModel(ApproximateGP):
         h = self.fc(self.features)
         h = self.norm(h)
         h = self.activation(h)
-        a = self.rewire(h, self.graph)
-        h = a @ h
+        h = self.rewire(h, self.graph)
         mean = self.mean_module(h)
         covar = self.covar_module(h)
         covar = covar \
