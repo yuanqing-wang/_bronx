@@ -24,31 +24,25 @@ from torchdiffeq import odeint_adjoint as odeint
 class ODEFunc(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self._g = None
-        self._e = None
-
-    @property
-    def g(self):
-        return self._g
-
-    @property
-    def e(self):
-        return self._e
-    
-    @g.setter
-    def g(self, g):
-        self._g = g
-
-    @e.setter
-    def e(self, e):
-        self._e = e
+        self.g = None
+        self.wk = None
+        self.wq = None
+        self.gamma = None
 
     def forward(self, t, x):
         g = self.g
-        e = self.e
         g = g.local_var()
-        g.edata["e"] = e
         g.ndata["x"] = x
+        k = x @ self.wk
+        q = x @ self.wq
+        g.ndata["k"] = k
+        g.ndata["q"] = q
+        g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
+        e = g.edata["e"]
+        e = edge_softmax(g, e)
+        src, dst = g.edges()
+        e = torch.where((src == dst).unsqueeze(-1), self.gamma, e)
+        g.edata["e"] = e
         g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
         return g.ndata["x"]
 
@@ -57,26 +51,15 @@ class ODEBlock(torch.nn.Module):
         super().__init__()
         self.odefunc = odefunc
 
-    def forward(self, g, h, e, t=1.0):
+    def forward(self, g, h, t, wk, wq, gamma):
         g = g.local_var()
         self.odefunc.g = g
-        self.odefunc.e = e
+        self.odefunc.wk = wk
+        self.odefunc.wq = wq
+        self.odefunc.gamma = gamma
         t = torch.tensor([0, t], device=h.device, dtype=h.dtype)
         y = odeint(self.odefunc, h, t, method="rk4")[1]
         return y
-
-class LinearDiffusion(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.ode_block = ODEBlock(ODEFunc())
-
-    def forward(self, g, h, e, t=1.0, gamma=-1.0):
-        g = g.local_var()
-        g.edata["e"] = e
-        src, dst = g.edges()
-        g.edata["e"][src==dst, ...] = gamma
-        result = self.ode_block(g, h, g.edata["e"], t=t)
-        return result
 
 class Rewire(torch.nn.Module):
     def __init__(self, in_features, out_features, t=1.0, gamma=-1.0):
@@ -85,20 +68,12 @@ class Rewire(torch.nn.Module):
         self.fc_q = torch.nn.Linear(in_features, out_features, bias=False)
         self.register_buffer("t", torch.tensor(t))
         self.register_buffer("gamma", torch.tensor(gamma))
-        # self.linear_diffusion = LinearDiffusion()
+        self.ode = ODEBlock(ODEFunc())
         self.dropout = torch.nn.Dropout(0.5)
 
     def forward(self, feat, graph):
         graph = graph.local_var()
-        k = self.fc_k(feat)
-        q = self.fc_q(feat)
-        graph.ndata["k"] = k
-        graph.ndata["q"] = q
-        graph.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
-        e = graph.edata["e"]
-        e = self.dropout(e)
-        e = edge_softmax(graph, e)
-        h = self.linear_diffusion(graph, feat, e, t=self.t, gamma=self.gamma)
+        h = self.ode(graph, feat, t=self.t, wk=self.fc_k.weight, wq=self.fc_q.weight, gamma=self.gamma)
         return h
 
 @lru_cache(maxsize=1)
