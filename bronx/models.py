@@ -44,13 +44,19 @@ class ODEFunc(torch.nn.Module):
         self._e = e
 
     def forward(self, t, x):
+        x, k = x[:, :-x.shape[0]], x[:, -x.shape[0]:]
+        # x = x - x.mean(dim=-1, keepdim=True)
+        # x = torch.nn.functional.normalize(x, dim=-1)
+        k = x @ x.t()
         g = self.g
         e = self.e
         g = g.local_var()
         g.edata["e"] = e
         g.ndata["x"] = x
         g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
-        return g.ndata["x"]
+        x = g.ndata["x"]
+        x = torch.cat([x, k], dim=1)
+        return x
 
 class ODEBlock(torch.nn.Module):
     def __init__(self, odefunc):
@@ -62,8 +68,9 @@ class ODEBlock(torch.nn.Module):
         self.odefunc.g = g
         self.odefunc.e = e
         t = torch.tensor([0, t], device=h.device, dtype=h.dtype)
-        y = odeint(self.odefunc, h, t, method="rk4")[1]
-        return y
+        k = odeint(self.odefunc, h, t, method="rk4")[1]
+        k = k[:, -k.shape[0]:]
+        return k
 
 class LinearDiffusion(torch.nn.Module):
     def __init__(self):
@@ -75,6 +82,11 @@ class LinearDiffusion(torch.nn.Module):
         g.edata["e"] = e
         src, dst = g.edges()
         g.edata["e"][src==dst, ...] = gamma
+        k = torch.zeros(
+            g.number_of_nodes(), g.number_of_nodes(), 
+            device=h.device, dtype=h.dtype
+        )
+        h = torch.cat([h, k], dim=-1)
         result = self.ode_block(g, h, g.edata["e"], t=t)
         return result
 
@@ -96,8 +108,8 @@ class Rewire(torch.nn.Module):
         graph.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
         e = graph.edata["e"]
         e = edge_softmax(graph, e)
-        h = self.linear_diffusion(graph, feat, e, t=self.t, gamma=self.gamma)
-        return h
+        k = self.linear_diffusion(graph, feat, e, t=self.t, gamma=self.gamma)
+        return k
 
 @lru_cache(maxsize=1)
 def graph_exp(graph):
@@ -211,12 +223,11 @@ class ApproximateBronxModel(ApproximateGP):
         h = self.fc(self.features)
         h = self.norm(h)
         h = self.activation(h)
-        h = self.rewire(h, self.graph)
         mean = self.mean_module(h)
-        covar = self.covar_module(h)
-        covar = covar \
-        + self.log_sigma.exp() \
+        covar = self.rewire(h, self.graph)
+        covar = covar + self.log_sigma.exp() \
         * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
+        print(covar)
         x = x.squeeze().long()
         mean = mean[..., x]
         covar = covar[..., x, :][..., :, x]

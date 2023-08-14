@@ -112,7 +112,6 @@ def run(args):
         y_hat = model(torch.where(g.ndata["val_mask"])[0]).mean
         y = g.ndata["label"][g.ndata["val_mask"]]
         accuracy = (y_hat.argmax(dim=-1) == y).float().mean().item()
-    print(accuracy)
     return accuracy
 
 if __name__ == "__main__":
@@ -125,9 +124,9 @@ if __name__ == "__main__":
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--n_epochs", type=int, default=100)
     parser.add_argument("--test", type=int, default=1)
-    parser.add_argument("--t", type=float, default=2.0)
+    parser.add_argument("--t", type=float, default=1.0)
     parser.add_argument("--gamma", type=float, default=-1.0)
-    parser.add_argument("--log_sigma", type=float, default=2.0)
-    parser.add_argument("--activation", type=str, default="sigmoid")
+    parser.add_argument("--log_sigma", type=float, default=1.0)
+    parser.add_argument("--activation", type=str, default="tanh")
     args = parser.parse_args()
     run(args)
