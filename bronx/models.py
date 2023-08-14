@@ -9,6 +9,7 @@ from gpytorch.variational import (
     VariationalStrategy,
     CholeskyVariationalDistribution,
     NaturalVariationalDistribution,
+    TrilNaturalVariationalDistribution,
     MeanFieldVariationalDistribution,
     IndependentMultitaskVariationalStrategy,
 )
@@ -173,7 +174,7 @@ class ApproximateBronxModel(ApproximateGP):
     ):
 
         batch_shape = torch.Size([num_classes])
-        variational_distribution = NaturalVariationalDistribution(
+        variational_distribution = TrilNaturalVariationalDistribution(
             inducing_points.size(-1),
             batch_shape=batch_shape,
         )
@@ -195,7 +196,9 @@ class ApproximateBronxModel(ApproximateGP):
             batch_shape=torch.Size((num_classes,)),
         )
 
-        self.covar_module = LinearKernel()
+        self.covar_module = LinearKernel(
+            batch_shape=torch.Size((num_classes,)),
+        )
         self.rewire = Rewire(
             hidden_features, hidden_features, t=t,
         )
@@ -203,13 +206,12 @@ class ApproximateBronxModel(ApproximateGP):
         self.register_buffer("features", features)
         self.graph = graph
         self.fc = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.norm = torch.nn.LayerNorm(hidden_features)
         self.register_buffer("log_sigma", torch.tensor(log_sigma))
         self.activation = activation
 
     def forward(self, x):
         h = self.fc(self.features)
-        h = self.norm(h)
+        # h = self.norm(h)
         h = self.activation(h)
         h = self.rewire(h, self.graph)
         mean = self.mean_module(h)

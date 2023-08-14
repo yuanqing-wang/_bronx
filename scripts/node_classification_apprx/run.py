@@ -81,7 +81,7 @@ def run(args):
         model = model.to("cuda:0")
         likelihood = likelihood.cuda()
 
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["val_mask"].sum())
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=g.ndata["train_mask"].sum())
     optimizer = getattr(
         torch.optim, args.optimizer
     )(
@@ -90,7 +90,7 @@ def run(args):
         weight_decay=args.weight_decay,
     )
     ngd = gpytorch.optim.NGD(
-        model.variational_parameters(), num_data=g.ndata["val_mask"].sum(),
+        model.variational_parameters(), num_data=g.ndata["train_mask"].sum(),
         lr=0.1,
     )
 
@@ -121,13 +121,13 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--optimizer", type=str, default="AdamW")
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--n_epochs", type=int, default=100)
     parser.add_argument("--test", type=int, default=1)
     parser.add_argument("--t", type=float, default=2.0)
     parser.add_argument("--gamma", type=float, default=-1.0)
     parser.add_argument("--log_sigma", type=float, default=2.0)
-    parser.add_argument("--activation", type=str, default="sigmoid")
+    parser.add_argument("--activation", type=str, default="tanh")
     args = parser.parse_args()
     run(args)
