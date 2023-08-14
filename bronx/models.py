@@ -85,8 +85,7 @@ class Rewire(torch.nn.Module):
         self.fc_q = torch.nn.Linear(in_features, out_features, bias=False)
         self.register_buffer("t", torch.tensor(t))
         self.register_buffer("gamma", torch.tensor(gamma))
-        # self.linear_diffusion = LinearDiffusion()
-        self.dropout = torch.nn.Dropout(0.5)
+        self.linear_diffusion = LinearDiffusion()
 
     def forward(self, feat, graph):
         graph = graph.local_var()
@@ -96,7 +95,6 @@ class Rewire(torch.nn.Module):
         graph.ndata["q"] = q
         graph.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
         e = graph.edata["e"]
-        e = self.dropout(e)
         e = edge_softmax(graph, e)
         h = self.linear_diffusion(graph, feat, e, t=self.t, gamma=self.gamma)
         return h
