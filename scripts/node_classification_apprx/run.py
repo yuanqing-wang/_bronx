@@ -57,9 +57,8 @@ def run(args):
         g = g.to("cuda:0")
 
     likelihood = gpytorch.likelihoods.SoftmaxLikelihood(
-        num_features=g.ndata["label"].max() + 1,
+        num_features=args.hidden_features,
         num_classes=g.ndata["label"].max()+1,
-        mixing_weights=None,
     )
 
     inducing_points = torch.where(g.ndata["train_mask"])[0].float()
@@ -70,7 +69,7 @@ def run(args):
         in_features=g.ndata["feat"].shape[-1],
         hidden_features=args.hidden_features,
         graph=g,
-        num_classes=g.ndata["label"].max()+1,
+        num_classes=args.hidden_features,
         t=args.t,
         gamma=args.gamma,
         log_sigma=args.log_sigma,
@@ -106,20 +105,21 @@ def run(args):
         optimizer.step()
         ngd.step()
 
-    model.eval()
-    likelihood.eval()
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
-        y_hat = model(torch.where(g.ndata["val_mask"])[0]).mean
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy = (y_hat.argmax(dim=-1) == y).float().mean().item()
-    print(accuracy)
+        model.eval()
+        likelihood.eval()
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            y_hat = model(torch.where(g.ndata["val_mask"])[0]).mean
+            y_hat = y_hat @ likelihood.mixing_weights.T
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy = (y_hat.argmax(dim=-1) == y).float().mean().item()
+        print(accuracy)
     return accuracy
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--hidden_features", type=int, default=16)
+    parser.add_argument("--hidden_features", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--optimizer", type=str, default="AdamW")
