@@ -196,9 +196,8 @@ class ApproximateBronxModel(ApproximateGP):
             batch_shape=torch.Size((num_classes,)),
         )
 
-        self.covar_module = LinearKernel(
-            batch_shape=torch.Size((num_classes,)),
-        )
+        self.covar_module = LinearKernel()
+
         self.rewire = Rewire(
             hidden_features, hidden_features, t=t,
         )
@@ -209,9 +208,9 @@ class ApproximateBronxModel(ApproximateGP):
         self.register_buffer("log_sigma", torch.tensor(log_sigma))
         self.activation = activation
 
+
     def forward(self, x):
         h = self.fc(self.features)
-        # h = self.norm(h)
         h = self.activation(h)
         h = self.rewire(h, self.graph)
         mean = self.mean_module(h)
