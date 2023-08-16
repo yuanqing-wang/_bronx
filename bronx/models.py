@@ -1,3 +1,4 @@
+import math
 from functools import lru_cache
 from typing import Callable
 import torch
@@ -51,19 +52,22 @@ class ODEFunc(torch.nn.Module):
         g.edata["e"] = e
         g.ndata["x"] = x
         g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
-        return g.ndata["x"]
+        x = g.ndata["x"]
+        return x
 
 class ODEBlock(torch.nn.Module):
-    def __init__(self, odefunc):
+    def __init__(self, odefunc, n=8):
         super().__init__()
         self.odefunc = odefunc
+        self.n = n
 
     def forward(self, g, h, e, t=1.0):
         g = g.local_var()
         self.odefunc.g = g
         self.odefunc.e = e
-        t = torch.tensor([0, t], device=h.device, dtype=h.dtype)
-        y = odeint(self.odefunc, h, t, method="rk4")[1]
+        self.odefunc.traj = []
+        t = torch.linspace(0, t, self.n, device=h.device, dtype=h.dtype)
+        y = odeint(self.odefunc, h, t, method="rk4")
         return y
 
 class LinearDiffusion(torch.nn.Module):
@@ -87,6 +91,7 @@ class Rewire(torch.nn.Module):
         self.register_buffer("t", torch.tensor(t))
         self.register_buffer("gamma", torch.tensor(gamma))
         self.linear_diffusion = LinearDiffusion()
+
 
     def forward(self, feat, graph):
         graph = graph.local_var()
@@ -171,6 +176,7 @@ class ApproximateBronxModel(ApproximateGP):
             gamma: float=-1.0,
             log_sigma: float=0.0,
             activation: Callable=torch.nn.functional.silu,
+            n: int=8,
     ):
 
         batch_shape = torch.Size([num_classes])
@@ -192,9 +198,7 @@ class ApproximateBronxModel(ApproximateGP):
         )
 
         super().__init__(variational_strategy)
-        self.mean_module = gpytorch.means.ZeroMean(
-            batch_shape=torch.Size((num_classes,)),
-        )
+        self.mean_module = gpytorch.means.ZeroMean()
 
         self.covar_module = LinearKernel()
 
@@ -207,14 +211,16 @@ class ApproximateBronxModel(ApproximateGP):
         self.fc = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.register_buffer("log_sigma", torch.tensor(log_sigma))
         self.activation = activation
-
+        self.c = torch.nn.Parameter(torch.randn(n, hidden_features))
 
     def forward(self, x):
         h = self.fc(self.features)
         h = self.activation(h)
-        h = self.rewire(h, self.graph)
         mean = self.mean_module(h)
+        h = self.rewire(h, self.graph)
+        h = h * self.c[:, None, :].softmax(0)
         covar = self.covar_module(h)
+        covar = covar.sum(0) # / covar.shape[0]
         covar = covar \
         + self.log_sigma.exp() \
         * torch.eye(covar.shape[-1], dtype=covar.dtype, device=covar.device)
