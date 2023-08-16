@@ -63,7 +63,7 @@ class ODEBlock(torch.nn.Module):
         self.odefunc.g = g
         self.odefunc.e = e
         t = torch.tensor([0, t], device=h.device, dtype=h.dtype)
-        y = odeint(self.odefunc, h, t, method="rk4")[1]
+        y = odeint(self.odefunc, h, t, method="rk4", options={"step_size": 0.1})[1]
         return y
 
 class LinearDiffusion(torch.nn.Module):
