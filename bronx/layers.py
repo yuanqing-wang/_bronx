@@ -250,21 +250,6 @@ class EdgeRecover(pyro.nn.PyroModule):
                     obs=torch.zeros(g.number_of_edges(), device=g.device),
                 )
 
-class BatchedLSTM(torch.nn.LSTM):
-    def forward(self, h):
-        if h.dim() > 3:
-            event_shape = h.shape[2:]
-            batch_shape = h.shape[:2]
-            h = h.reshape(-1, *event_shape)
-            _, (h, __) = super().forward(h)
-            h = h.reshape(*batch_shape, -1)
-            return h
-        else:
-            output, (h, c) = super().forward(h)
-            h = h.squeeze(0)
-            return h
-
-
 
 
 

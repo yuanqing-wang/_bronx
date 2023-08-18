@@ -56,27 +56,27 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        self.node_recover = NodeRecover(
-            hidden_features, in_features, scale=node_recover_scale,
-        )
-        self.edge_recover = EdgeRecover(
-            hidden_features, embedding_features, scale=edge_recover_scale,
-        )
+        # self.node_recover = NodeRecover(
+        #     hidden_features, in_features, scale=node_recover_scale,
+        # )
+        # self.edge_recover = EdgeRecover(
+        #     hidden_features, embedding_features, scale=edge_recover_scale,
+        # )
 
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)
 
-        with pyro.plate("nodes", g.number_of_nodes(), device=h.device):
-            epsilon = pyro.sample(
-                "epsilon_in",
-                pyro.distributions.Normal(
-                    torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device), 
-                    torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device) * self.log_alpha.exp(),
-                ).to_event(1)
-            )
+        # with pyro.plate("nodes", g.number_of_nodes(), device=h.device):
+        #     epsilon = pyro.sample(
+        #         "epsilon_in",
+        #         pyro.distributions.Normal(
+        #             torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device), 
+        #             torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device) * self.log_alpha.exp(),
+        #         ).to_event(1)
+        #     )
 
-        h = h * epsilon
+        # h = h * epsilon
         
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
@@ -88,24 +88,24 @@ class BronxModel(pyro.nn.PyroModule):
         h0 = h
         h = self.fc_in(h)
 
-        with pyro.plate("nodes", g.number_of_nodes(), device=h.device):
-            epsilon = pyro.sample(
-                "epsilon_in",
-                pyro.distributions.Normal(
-                    torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device), 
-                    self.alpha * torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device),
-                ).to_event(1)
-            )
+        # with pyro.plate("nodes", g.number_of_nodes(), device=h.device):
+        #     epsilon = pyro.sample(
+        #         "epsilon_in",
+        #         pyro.distributions.Normal(
+        #             torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device), 
+        #             self.alpha * torch.ones(g.number_of_nodes(), h.shape[-1], device=h.device),
+        #         ).to_event(1)
+        #     )
 
-        h = h * epsilon
+        # h = h * epsilon
         
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
         
         h = self.activation(h)
         
-        self.edge_recover(g, h)
-        self.node_recover(g, h, h0)
+        # self.edge_recover(g, h)
+        # self.node_recover(g, h, h0)
 
         h = self.activation(h)
         h = self.fc_out(h)
