@@ -65,9 +65,7 @@ def run(args):
         sigma_factor=args.sigma_factor,
         kl_scale=args.kl_scale,
         t=args.t,
-        gamma=args.gamma,
-        edge_recover_scale=args.edge_recover_scale,
-        alpha=args.alpha,
+        # edge_recover_scale=args.edge_recover_scale,
     )
  
     if torch.cuda.is_available():
@@ -75,21 +73,21 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    # optimizer = getattr(pyro.optim, args.optimizer)(
-    #     {"lr": args.learning_rate, "weight_decay": args.weight_decay}
-    # )
-
-    optimizer = SWA(
-        {
-            "base": getattr(torch.optim, args.optimizer),
-            "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "swa_args": {
-                "swa_start": args.swa_start, 
-                "swa_freq": args.swa_freq, 
-                "swa_lr": args.swa_lr,
-            },
-        }
+    optimizer = getattr(pyro.optim, args.optimizer)(
+        {"lr": args.learning_rate, "weight_decay": args.weight_decay}
     )
+
+    # optimizer = SWA(
+    #     {
+    #         "base": getattr(torch.optim, args.optimizer),
+    #         "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+    #         "swa_args": {
+    #             "swa_start": args.swa_start, 
+    #             "swa_freq": args.swa_freq, 
+    #             "swa_lr": args.swa_lr,
+    #         },
+    #     }
+    # )
 
     svi = pyro.infer.SVI(
         model,
@@ -108,37 +106,36 @@ def run(args):
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    model.eval()
-    swap_swa_sgd(svi.optim)
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+        model.eval()
+        with torch.no_grad():
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
+                "_RETURN"
+            ].mean(0)
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
+            print(accuracy_vl, loss, flush=True)
+
+    if args.test:
+        y_hat = predictive(
+            g, g.ndata["feat"], mask=g.ndata["test_mask"]
+        )["_RETURN"].mean(0)
+        y = g.ndata["label"][g.ndata["test_mask"]]
+        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
             y_hat
         )
 
-        if args.test:
-            y_hat = predictive(
-                g, g.ndata["feat"], mask=g.ndata["test_mask"]
-            )["_RETURN"].mean(0)
-            y = g.ndata["label"][g.ndata["test_mask"]]
-            accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-                y_hat
-            )
-
-            print(accuracy_vl, accuracy_te, flush=True)
-            return accuracy_vl, accuracy_te
-        return accuracy_vl
+        return accuracy_vl, accuracy_te
+    return accuracy_vl
 
 if __name__ == "__main__":
     import argparse
@@ -147,23 +144,21 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_features", type=int, default=64)
     parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=1e-3)
-    parser.add_argument("--depth", type=int, default=10)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--num_samples", type=int, default=32)
     parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--num_heads", type=int, default=8)
+    parser.add_argument("--num_heads", type=int, default=4)
     parser.add_argument("--sigma_factor", type=float, default=10.0)
     parser.add_argument("--t", type=float, default=5.0)
-    parser.add_argument("--gamma", type=float, default=-1.0)
     parser.add_argument("--optimizer", type=str, default="RMSprop")
-    parser.add_argument("--edge_recover_scale", type=float, default=1e-2)
-    parser.add_argument("--node_recover_scale", type=float, default=1e-2)
-    parser.add_argument("--kl_scale", type=float, default=1e-3)
-    parser.add_argument("--alpha", type=float, default=0.2)
+    # parser.add_argument("--edge_recover_scale", type=float, default=1e-2)
+    # parser.add_argument("--node_recover_scale", type=float, default=1e-2)
+    parser.add_argument("--kl_scale", type=float, default=1e-1)
     parser.add_argument("--swa_start", type=int, default=20)
     parser.add_argument("--swa_freq", type=int, default=10)
     parser.add_argument("--swa_lr", type=float, default=1e-2)
-    parser.add_argument("--n_epochs", type=int, default=100)
+    parser.add_argument("--n_epochs", type=int, default=1000)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()
     run(args)
