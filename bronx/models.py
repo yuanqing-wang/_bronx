@@ -54,9 +54,9 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        # self.node_recover = NodeRecover(
-        #     hidden_features, in_features, scale=node_recover_scale,
-        # )
+        self.node_recover = NodeRecover(
+            hidden_features, in_features, scale=node_recover_scale,
+        )
         # self.edge_recover = EdgeRecover(
         #     hidden_features, embedding_features, scale=edge_recover_scale,
         # )
@@ -81,7 +81,7 @@ class BronxModel(pyro.nn.PyroModule):
         h = self.activation(h)
         
         # self.edge_recover(g, h)
-        # self.node_recover(g, h, h0)
+        self.node_recover(g, h, h0)
 
         h = self.activation(h)
         h = self.fc_out(h)

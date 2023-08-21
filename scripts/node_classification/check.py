@@ -1,8 +1,7 @@
 import os
 import glob
 import json
-import ray
-from ray.tune import ExperimentAnalysis
+import pandas as pd
 
 def check(path):
     results = []
@@ -17,6 +16,9 @@ def check(path):
             pass
 
     results = sorted(results, key=lambda x: x["_metric"]["accuracy"], reverse=True)
+    df = pd.DataFrame([result["config"] for result in results])
+    df["accuracy"] = [result["_metric"]["accuracy"] for result in results]
+    df.to_csv("results.csv")
 
     print(results[0]["_metric"]["accuracy"])
     print(results[0]["config"])

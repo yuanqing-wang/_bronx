@@ -100,6 +100,7 @@ def run(args):
 
     accuracies = []
     accuracies_te = []
+    max_accuracy_vl = 0.0
     for idx in range(args.n_epochs):
         model.train()
         loss = svi.step(
@@ -123,7 +124,11 @@ def run(args):
             accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
                 y_hat
             )
-            print(accuracy_vl, loss, flush=True)
+
+            if __name__ == "__main__":
+                print(accuracy_vl, flush=True)
+
+            max_accuracy_vl = max(max_accuracy_vl, accuracy_vl)
 
     if args.test:
         y_hat = predictive(
@@ -135,30 +140,27 @@ def run(args):
         )
 
         return accuracy_vl, accuracy_te
-    return accuracy_vl
+    return max_accuracy_vl
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--hidden_features", type=int, default=64)
-    parser.add_argument("--embedding_features", type=int, default=64)
+    parser.add_argument("--hidden_features", type=int, default=25)
+    parser.add_argument("--embedding_features", type=int, default=20)
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--depth", type=int, default=1)
-    parser.add_argument("--num_samples", type=int, default=32)
-    parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--num_heads", type=int, default=4)
+    parser.add_argument("--num_samples", type=int, default=16)
+    parser.add_argument("--num_particles", type=int, default=16)
+    parser.add_argument("--num_heads", type=int, default=5)
     parser.add_argument("--sigma_factor", type=float, default=10.0)
     parser.add_argument("--t", type=float, default=5.0)
-    parser.add_argument("--optimizer", type=str, default="RMSprop")
-    # parser.add_argument("--edge_recover_scale", type=float, default=1e-2)
-    # parser.add_argument("--node_recover_scale", type=float, default=1e-2)
-    parser.add_argument("--kl_scale", type=float, default=1e-1)
-    parser.add_argument("--swa_start", type=int, default=20)
-    parser.add_argument("--swa_freq", type=int, default=10)
-    parser.add_argument("--swa_lr", type=float, default=1e-2)
-    parser.add_argument("--n_epochs", type=int, default=1000)
+    parser.add_argument("--optimizer", type=str, default="AdamW")
+    parser.add_argument("--edge_recover_scale", type=float, default=1e-3)
+    parser.add_argument("--node_recover_scale", type=float, default=1e-3)
+    parser.add_argument("--kl_scale", type=float, default=1e-5)
+    parser.add_argument("--n_epochs", type=int, default=500)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()
     run(args)

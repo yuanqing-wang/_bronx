@@ -11,62 +11,37 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-from torchdiffeq import odeint_adjoint as odeint
-# from torchdiffeq import odeint
+# from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint
 
 class ODEFunc(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self._g = None
-        self._e = None
-        self.alpha = torch.nn.Parameter(torch.tensor(0.0))
-
-    @property
-    def g(self):
-        return self._g
-
-    @property
-    def e(self):
-        return self._e
-    
-    @g.setter
-    def g(self, g):
-        self._g = g
-
-    @e.setter
-    def e(self, e):
-        self._e = e
-
+        self.g = None
+        self.edge_shape = None
+        self.node_shape = None
+        
     def forward(self, t, x):
-        x0 = x
-        g = self.g
-        e = self.e
-        g = g.local_var()
+        h, e = x[:self.node_shape.numel()], x[self.node_shape.numel():]
+        h, e = h.reshape(*self.node_shape), e.reshape(*self.edge_shape)
+        h0 = h
+        g = self.g.local_var()
         g.edata["e"] = e
-        g.ndata["x"] = x
-        g.update_all(fn.u_mul_e("x", "e", "m"), fn.sum("m", "x"))
-        x = g.ndata["x"]
+        g.ndata["h"] = h
+        g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
+        h = g.ndata["h"]
+        h = h - h0
+        h, e = h.flatten(), e.flatten()
+        x = torch.cat([h, torch.zeros_like(e)])
         return x
 
-class ODEBlock(torch.nn.Module):
-    def __init__(self, odefunc):
-        super().__init__()
-        self.odefunc = odefunc
-
-    def forward(self, g, h, e, t=1.0):
-        g = g.local_var()
-        self.odefunc.g = g
-        self.odefunc.e = e
-        t = torch.tensor([0.0, t], device=h.device, dtype=h.dtype)
-        y = odeint(self.odefunc, h, t, method="rk4")
-        return y
-
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, t):
         super().__init__()
-        self.ode_block = ODEBlock(ODEFunc())
+        self.odefunc = ODEFunc()
+        self.register_buffer("t", torch.tensor(t))
 
-    def forward(self, g, h, e, t=1.0):
+    def forward(self, g, h, e):
         g = g.local_var()
 
         parallel = e.dim() == 4
@@ -81,17 +56,19 @@ class LinearDiffusion(torch.nn.Module):
         g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
-
-        g = dgl.add_self_loop(g)
-        src, dst = g.edges()
-        g.edata["e"][src==dst, ...] = -1.0
-
-        result = self.ode_block(g, h, g.edata["e"], t=t)[-1]
-
+        node_shape = h.shape
+        self.odefunc.node_shape = node_shape
+        self.odefunc.edge_shape = g.edata["e"].shape
+        self.odefunc.g = g
+        t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
+        x = torch.cat([h.flatten(), g.edata["e"].flatten()])
+        x = odeint(self.odefunc, x, t, method="dopri5")[-1]
+        h, e = x[:h.numel()], x[h.numel():]
+        h = h.reshape(*node_shape)
         if parallel:
-            result = result.swapaxes(0, 1)
-        result = result.flatten(-2, -1)
-        return result
+            h = h.swapaxes(0, 1)
+        h = h.flatten(-2, -1)
+        return h
 
 class BronxLayer(pyro.nn.PyroModule):
     def __init__(
@@ -108,6 +85,11 @@ class BronxLayer(pyro.nn.PyroModule):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+        torch.nn.init.constant_(self.fc_k.weight, 1e-5)
+        torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
+        torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
+
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -115,30 +97,29 @@ class BronxLayer(pyro.nn.PyroModule):
         self.num_heads = num_heads
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
-        self.t = t
-        self.linear_diffusion = LinearDiffusion()
-        # self.lstm = BatchedLSTM(out_features, out_features, batch_first=True)
+        self.linear_diffusion = LinearDiffusion(t)
 
     def guide(self, g, h):
         g = g.local_var()
         h0 = h
-        h = h - h.mean(-1, keepdims=True)
-        h = torch.nn.functional.normalize(h, dim=-1)
-        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
+        # h = h - h.mean(-1, keepdims=True)
+        # h = torch.nn.functional.normalize(h, dim=-1)
+        mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
         log_sigma = log_sigma.reshape(
             *log_sigma.shape[:-1], self.num_heads, -1
         )
+        k = k.reshape(*k.shape[:-1], self.num_heads, -1)
 
         parallel = h.dim() == 3
 
         if parallel:
-            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+            mu, log_sigma, k = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1), k.swapaxes(0, 1)
 
-        g.ndata["mu"], g.ndata["log_sigma"] = mu, log_sigma
-        g.apply_edges(dgl.function.u_dot_v("mu", "mu", "mu"))
+        g.ndata["mu"], g.ndata["log_sigma"], g.ndata["k"] = mu, log_sigma, k
+        g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu"))
         g.apply_edges(
-            dgl.function.u_dot_v("log_sigma", "log_sigma", "log_sigma")
+            dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
         )
         mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
 
@@ -160,7 +141,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h0, e, t=self.t)
+        h = self.linear_diffusion(g, h0, e)
         return h
 
     def forward(self, g, h):
@@ -191,7 +172,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h, e, t=self.t)
+        h = self.linear_diffusion(g, h, e)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
