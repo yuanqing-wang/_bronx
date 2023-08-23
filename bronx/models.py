@@ -11,7 +11,7 @@ class BronxModel(pyro.nn.PyroModule):
             self, in_features, hidden_features, out_features, 
             embedding_features=None,
             activation=torch.nn.SiLU(),
-            depth=2,
+            depth=1,
             num_heads=4,
             sigma_factor=1.0,
             kl_scale=1.0,

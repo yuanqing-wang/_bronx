@@ -7,6 +7,8 @@ from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
 from bronx.models import NodeClassificationBronxModel
 from ray.air import session
+import warnings
+warnings.filterwarnings("ignore")
 
 def run(args):
     pyro.clear_param_store()
@@ -126,9 +128,7 @@ def run(args):
                 y_hat
             )
 
-            if __name__ == "__main__":
-                print(accuracy_vl, flush=True)
-            else:
+            if not __name__ == "__main__":
                 session.report({"accuracy": accuracy_vl})
 
             max_accuracy_vl = max(max_accuracy_vl, accuracy_vl)
@@ -144,6 +144,7 @@ def run(args):
 
         return accuracy_vl, accuracy_te
 
+    print("%.6f" % max_accuracy_vl, flush=True)
     return max_accuracy_vl
 
 if __name__ == "__main__":
@@ -165,9 +166,9 @@ if __name__ == "__main__":
     parser.add_argument("--edge_recover_scale", type=float, default=1e-3)
     parser.add_argument("--node_recover_scale", type=float, default=1e-3)
     parser.add_argument("--kl_scale", type=float, default=1e-5)
-    parser.add_argument("--n_epochs", type=int, default=500)
+    parser.add_argument("--n_epochs", type=int, default=50)
     parser.add_argument("--adjoint", type=int, default=0)
     parser.add_argument("--physique", type=int, default=0)
-    parser.add_argument("--test", type=int, default=1)
+    parser.add_argument("--test", type=int, default=0)
     args = parser.parse_args()
     run(args)
