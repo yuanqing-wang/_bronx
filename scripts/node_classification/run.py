@@ -6,8 +6,7 @@ import dgl
 from ogb.nodeproppred import DglNodePropPredDataset
 dgl.use_libxsmm(False)
 from bronx.models import NodeClassificationBronxModel
-from bronx.utils import anneal_schedule
-from bronx.optim import SWA, swap_swa_sgd
+from ray.air import session
 
 def run(args):
     pyro.clear_param_store()
@@ -65,7 +64,9 @@ def run(args):
         sigma_factor=args.sigma_factor,
         kl_scale=args.kl_scale,
         t=args.t,
-        # edge_recover_scale=args.edge_recover_scale,
+        adjoint=bool(args.adjoint),
+        activation=getattr(torch.nn, args.activation)(),
+        physique=args.physique,
     )
  
     if torch.cuda.is_available():
@@ -127,6 +128,8 @@ def run(args):
 
             if __name__ == "__main__":
                 print(accuracy_vl, flush=True)
+            else:
+                session.report({"accuracy": accuracy_vl})
 
             max_accuracy_vl = max(max_accuracy_vl, accuracy_vl)
 
@@ -140,6 +143,7 @@ def run(args):
         )
 
         return accuracy_vl, accuracy_te
+
     return max_accuracy_vl
 
 if __name__ == "__main__":
@@ -148,6 +152,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
     parser.add_argument("--hidden_features", type=int, default=25)
     parser.add_argument("--embedding_features", type=int, default=20)
+    parser.add_argument("--activation", type=str, default="SiLU")
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--depth", type=int, default=1)
@@ -161,6 +166,8 @@ if __name__ == "__main__":
     parser.add_argument("--node_recover_scale", type=float, default=1e-3)
     parser.add_argument("--kl_scale", type=float, default=1e-5)
     parser.add_argument("--n_epochs", type=int, default=500)
+    parser.add_argument("--adjoint", type=int, default=0)
+    parser.add_argument("--physique", type=int, default=0)
     parser.add_argument("--test", type=int, default=1)
     args = parser.parse_args()
     run(args)

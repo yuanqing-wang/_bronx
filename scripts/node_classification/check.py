@@ -15,12 +15,12 @@ def check(path):
         except:
             pass
 
-    results = sorted(results, key=lambda x: x["_metric"]["accuracy"], reverse=True)
+    results = sorted(results, key=lambda x: x["accuracy"], reverse=True)
     df = pd.DataFrame([result["config"] for result in results])
-    df["accuracy"] = [result["_metric"]["accuracy"] for result in results]
+    df["accuracy"] = [result["accuracy"] for result in results]
     df.to_csv("results.csv")
 
-    print(results[0]["_metric"]["accuracy"])
+    print(results[0]["accuracy"])
     print(results[0]["config"])
 
     return results[0]["config"]

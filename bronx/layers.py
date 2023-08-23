@@ -11,7 +11,7 @@ from dgl.nn import GraphConv
 from dgl import function as fn
 from dgl.nn.functional import edge_softmax
 
-# from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint_adjoint
 from torchdiffeq import odeint
 
 class ODEFunc(torch.nn.Module):
@@ -20,6 +20,7 @@ class ODEFunc(torch.nn.Module):
         self.g = None
         self.edge_shape = None
         self.node_shape = None
+        self.h0 = None
         
     def forward(self, t, x):
         h, e = x[:self.node_shape.numel()], x[self.node_shape.numel():]
@@ -31,15 +32,22 @@ class ODEFunc(torch.nn.Module):
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
         h = g.ndata["h"]
         h = h - h0
+        if self.h0 is not None:
+            h = h + self.h0
         h, e = h.flatten(), e.flatten()
         x = torch.cat([h, torch.zeros_like(e)])
         return x
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, t):
+    def __init__(self, t, adjoint=False, physique=False):
         super().__init__()
         self.odefunc = ODEFunc()
         self.register_buffer("t", torch.tensor(t))
+        self.physique = physique
+        if adjoint:
+            self.integrator = odeint_adjoint
+        else:
+            self.integrator = odeint
 
     def forward(self, g, h, e):
         g = g.local_var()
@@ -57,12 +65,14 @@ class LinearDiffusion(torch.nn.Module):
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
+        if self.physique is not None:
+            self.odefunc.h0 = h.clone().detach()
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
         t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
         x = torch.cat([h.flatten(), g.edata["e"].flatten()])
-        x = odeint(self.odefunc, x, t, method="dopri5")[-1]
+        x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
         h, e = x[:h.numel()], x[h.numel():]
         h = h.reshape(*node_shape)
         if parallel:
@@ -81,6 +91,8 @@ class BronxLayer(pyro.nn.PyroModule):
             sigma_factor=1.0,
             kl_scale=1.0,
             t=1.0,
+            adjoint=False,
+            physique=False,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -97,7 +109,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.num_heads = num_heads
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
-        self.linear_diffusion = LinearDiffusion(t)
+        self.linear_diffusion = LinearDiffusion(t, adjoint=adjoint, physique=physique)
 
     def guide(self, g, h):
         g = g.local_var()
