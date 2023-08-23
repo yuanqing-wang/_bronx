@@ -11,8 +11,9 @@ import os
 if "head_node" in os.environ:
     ray.init(address=os.environ["head_node"] + ":" + os.environ["port"])
 else:
-    ray.init(num_cpus=1, num_gpus=1)
-import torch
+    import torch
+    n_gpus = torch.cuda.device_count()
+    ray.init(num_cpus=n_gpus, num_gpus=n_gpus)
 
 def multiply_by_heads(args):
     args["embedding_features"] = (
@@ -60,6 +61,7 @@ def experiment(args):
         name=args.data,
         storage_path=args.data,
         stop={"time_total_s": 200, "training_iteration": 50},
+        checkpoint_config=air.CheckpointConfig(checkpoint_frequency=1),
     )
 
     tuner = tune.Tuner(
