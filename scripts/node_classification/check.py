@@ -2,6 +2,8 @@ import os
 import glob
 import json
 import pandas as pd
+import torch
+import pyro
 
 def check(path):
     results = []
@@ -15,15 +17,40 @@ def check(path):
         except:
             pass
 
-    results = sorted(results, key=lambda x: x["accuracy"], reverse=True)
+    results = sorted(results, key=lambda x: x["_metric"]["accuracy"], reverse=True)
     df = pd.DataFrame([result["config"] for result in results])
-    df["accuracy"] = [result["accuracy"] for result in results]
+    df["accuracy"] = [result["_metric"]["accuracy"] for result in results]
     df.to_csv("results.csv")
 
-    print(results[0]["accuracy"])
+    print(results[0]["_metric"]["accuracy"])
     print(results[0]["config"])
 
-    return results[0]["config"]
+    from run import get_graph
+    g = get_graph(results[0]["config"]["data"])
+    model = torch.load(results[0]["config"]["checkpoint"], map_location="cpu")
+    model.eval()
+
+    if torch.cuda.is_available():
+        model = model.cuda()
+        g = g.to("cuda:0")
+
+    with torch.no_grad():
+        predictive = pyro.infer.Predictive(
+            model,
+            guide=model.guide,
+            num_samples=32,
+            parallel=True,
+            return_sites=["_RETURN"],
+        )
+
+        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+            "_RETURN"
+        ].mean(0)
+        y = g.ndata["label"][g.ndata["test_mask"]]
+        accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+            y_hat
+        )
+        print(accuracy)
 
 if __name__ == "__main__":
     import sys

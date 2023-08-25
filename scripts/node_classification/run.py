@@ -10,9 +10,7 @@ from ray.air import session
 import warnings
 warnings.filterwarnings("ignore")
 
-def run(args):
-    pyro.clear_param_store()
-    torch.cuda.empty_cache()
+def get_graph(data):
     from dgl.data import (
         CoraGraphDataset,
         CiteseerGraphDataset,
@@ -23,7 +21,7 @@ def run(args):
         AmazonCoBuyPhotoDataset,
     )
 
-    g = locals()[args.data](verbose=False)[0]
+    g = locals()[data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
     # g = dgl.add_self_loop(g)
     src, dst = g.edges()
@@ -55,6 +53,15 @@ def run(args):
         g.ndata["train_mask"][train_idxs] = True
         g.ndata["val_mask"][val_idxs] = True
         g.ndata["test_mask"][test_idxs] = True
+    return g
+
+def run(args):
+    pyro.clear_param_store()
+    torch.cuda.empty_cache()
+    if args.seed > 0:
+        torch.manual_seed(args.seed)
+
+    g = get_graph(args.data)
 
     model = NodeClassificationBronxModel(
         in_features=g.ndata["feat"].shape[-1],
@@ -62,6 +69,7 @@ def run(args):
         hidden_features=args.hidden_features,
         embedding_features=args.embedding_features,
         depth=args.depth,
+        readout_depth=args.readout_depth,
         num_heads=args.num_heads,
         sigma_factor=args.sigma_factor,
         kl_scale=args.kl_scale,
@@ -69,6 +77,7 @@ def run(args):
         adjoint=bool(args.adjoint),
         activation=getattr(torch.nn, args.activation)(),
         physique=args.physique,
+        gamma=args.gamma,
     )
  
     if torch.cuda.is_available():
@@ -80,18 +89,6 @@ def run(args):
         {"lr": args.learning_rate, "weight_decay": args.weight_decay}
     )
 
-    # optimizer = SWA(
-    #     {
-    #         "base": getattr(torch.optim, args.optimizer),
-    #         "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-    #         "swa_args": {
-    #             "swa_start": args.swa_start, 
-    #             "swa_freq": args.swa_freq, 
-    #             "swa_lr": args.swa_lr,
-    #         },
-    #     }
-    # )
-
     svi = pyro.infer.SVI(
         model,
         model.guide,
@@ -101,8 +98,6 @@ def run(args):
         ),
     )
 
-    accuracies = []
-    accuracies_te = []
     max_accuracy_vl = 0.0
     for idx in range(args.n_epochs):
         model.train()
@@ -128,23 +123,13 @@ def run(args):
                 y_hat
             )
 
-            if not __name__ == "__main__":
-                session.report({"accuracy": accuracy_vl})
+            if accuracy_vl > max_accuracy_vl:
+                if len(args.checkpoint) > 1:
+                    torch.save(model, args.checkpoint)
 
             max_accuracy_vl = max(max_accuracy_vl, accuracy_vl)
 
-    if args.test:
-        y_hat = predictive(
-            g, g.ndata["feat"], mask=g.ndata["test_mask"]
-        )["_RETURN"].mean(0)
-        y = g.ndata["label"][g.ndata["test_mask"]]
-        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
-
-        return accuracy_vl, accuracy_te
-
-    print("%.6f" % max_accuracy_vl, flush=True)
+    print("ACCURACY: %.6f" % max_accuracy_vl, flush=True)
     return max_accuracy_vl
 
 if __name__ == "__main__":
@@ -157,18 +142,19 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--depth", type=int, default=1)
-    parser.add_argument("--num_samples", type=int, default=16)
-    parser.add_argument("--num_particles", type=int, default=16)
+    parser.add_argument("--num_samples", type=int, default=64)
+    parser.add_argument("--num_particles", type=int, default=64)
     parser.add_argument("--num_heads", type=int, default=5)
     parser.add_argument("--sigma_factor", type=float, default=10.0)
     parser.add_argument("--t", type=float, default=5.0)
     parser.add_argument("--optimizer", type=str, default="AdamW")
-    parser.add_argument("--edge_recover_scale", type=float, default=1e-3)
-    parser.add_argument("--node_recover_scale", type=float, default=1e-3)
     parser.add_argument("--kl_scale", type=float, default=1e-5)
     parser.add_argument("--n_epochs", type=int, default=50)
     parser.add_argument("--adjoint", type=int, default=0)
     parser.add_argument("--physique", type=int, default=0)
-    parser.add_argument("--test", type=int, default=0)
+    parser.add_argument("--gamma", type=float, default=1.0)
+    parser.add_argument("--readout_depth", type=int, default=1)
+    parser.add_argument("--checkpoint", type=str, default="")
+    parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()
     run(args)

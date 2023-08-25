@@ -12,21 +12,34 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features=None,
             activation=torch.nn.SiLU(),
             depth=1,
+            readout_depth=1,
             num_heads=4,
             sigma_factor=1.0,
             kl_scale=1.0,
             t=1.0,
-            edge_recover_scale=1e-5,
-            node_recover_scale=1e-5,
             alpha=0.1,
             adjoint=False,
             physique=False,
+            gamma=1.0,
         ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
+
+        fc_out = []
+        for idx in range(readout_depth-1):
+            fc_out.append(activation)
+            fc_out.append(
+                torch.nn.Linear(hidden_features, hidden_features, bias=False)
+            )
+        fc_out.append(activation)
+        fc_out.append(
+            torch.nn.Linear(hidden_features, out_features, bias=False)
+        )
+        self.fc_out = torch.nn.Sequential(*fc_out)
+
         self.alpha = alpha
         self.log_alpha = torch.nn.Parameter(
             torch.ones(hidden_features) * math.log(alpha)
@@ -46,11 +59,12 @@ class BronxModel(pyro.nn.PyroModule):
                 t=t/depth,
                 adjoint=adjoint,
                 physique=physique,
+                gamma=gamma,
             )
             
-            if idx > 0:
-                layer.fc_mu = self.layer0.fc_mu
-                layer.fc_log_sigma = self.layer0.fc_log_sigma
+            # if idx > 0:
+            #     layer.fc_mu = self.layer0.fc_mu
+            #     layer.fc_log_sigma = self.layer0.fc_log_sigma
 
             setattr(
                 self,
@@ -82,11 +96,6 @@ class BronxModel(pyro.nn.PyroModule):
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
         
-        h = self.activation(h)
-        
-        # self.edge_recover(g, h)
-        # self.node_recover(g, h, h0)
-
         h = self.fc_out(h)
         return h
 
