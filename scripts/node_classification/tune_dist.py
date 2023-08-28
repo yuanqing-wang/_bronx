@@ -59,33 +59,38 @@ def objective(args):
 def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
     param_space = {
-        "data": tune.choice([args.data]),
+        "data": args.data,
         "hidden_features": tune.randint(4, 16),
         "embedding_features": tune.randint(4, 16),
-        "num_heads": tune.randint(4, 16),
-        "depth": tune.randint(1, 4),
+        "num_heads": tune.randint(4, 32),
+        "depth": tune.randint(1, 5),
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
-        "num_samples": tune.choice([32]),
-        "num_particles": tune.choice([8]),
+        "num_samples": 32,
+        "num_particles": 8,
         "sigma_factor": tune.uniform(0.5, 10.0),
         "t": tune.uniform(0.5, 10.0),
         "optimizer": tune.choice(["RMSprop", "Adam", "AdamW"]),
         "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
-        "adjoint": tune.choice([0, 1]),
-        "physique": tune.choice([0, 1]),
+        "adjoint": 0,
+        "physique": 0,
         "gamma": tune.uniform(0.0, 1.0),
-        "readout_depth": tune.randint(1, 3),
+        "readout_depth": 1,
         "kl_scale": tune.loguniform(1e-10, 1e-2),
-        "n_epochs": tune.choice([50]),
-        "seed": tune.choice([2666]),
+        "swa_start": tune.randint(1, 50),
+        "swa_freq": tune.randint(1, 20),
+        "swa_lr": tune.loguniform(1e-5, 1e-1),
+        "dropout_in": tune.uniform(0, 1),
+        "dropout_out": tune.uniform(0, 1),
+        "n_epochs": 200,
+        "seed": 2666,
     }
 
     tune_config = tune.TuneConfig(
         metric="_metric/accuracy",
         mode="max",
         search_alg=ConcurrencyLimiter(OptunaSearch(), args.concurrent),
-        num_samples=10000,
+        num_samples=5000,
     )
 
     run_config = air.RunConfig(

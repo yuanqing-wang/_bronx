@@ -27,7 +27,7 @@ def check(path):
 
     from run import get_graph
     g = get_graph(results[0]["config"]["data"])
-    model = torch.load(results[0]["config"]["checkpoint"], map_location="cpu")
+    model = torch.load(results[0]["config"]["checkpoint"])
     model.eval()
 
     if torch.cuda.is_available():
@@ -43,14 +43,26 @@ def check(path):
             return_sites=["_RETURN"],
         )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
             "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["test_mask"]]
-        accuracy = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+        ]
+        
+        y_hat = y_hat.softmax(-1).mean(0)
+        y = g.ndata["label"][g.ndata["val_mask"]]
+        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
             y_hat
         )
-        print(accuracy)
+
+        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+            "_RETURN"
+        ]
+        
+        y_hat = y_hat.softmax(-1).mean(0)
+        y = g.ndata["label"][g.ndata["test_mask"]]
+        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+            y_hat
+        )
+        print(accuracy_vl, accuracy_te)
 
 if __name__ == "__main__":
     import sys

@@ -97,9 +97,9 @@ class BronxLayer(pyro.nn.PyroModule):
             gamma=1.0,
         ):
         super().__init__()
-        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
-        self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_mu = torch.nn.Linear(in_features, out_features)
+        self.fc_log_sigma = torch.nn.Linear(in_features, out_features)
+        self.fc_k = torch.nn.Linear(in_features, out_features)
         torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
         torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
