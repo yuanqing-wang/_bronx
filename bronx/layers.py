@@ -62,7 +62,7 @@ class LinearDiffusion(torch.nn.Module):
         h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
 
         g.edata["e"] = e
-        g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
+        # g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
@@ -100,6 +100,10 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_mu = torch.nn.Linear(in_features, out_features)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features)
         self.fc_k = torch.nn.Linear(in_features, out_features)
+
+        self.fc_mu_prior = torch.nn.Linear(in_features, num_heads)
+        self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads)
+
         # torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         # torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
         # torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
@@ -163,6 +167,19 @@ class BronxLayer(pyro.nn.PyroModule):
     def forward(self, g, h):
         g = g.local_var()
         h0 = h
+
+        mu_prior = self.fc_mu_prior(h)
+        log_sigma_prior = self.fc_log_sigma_prior(h)
+        g.ndata["mu_prior"] = mu_prior
+        g.ndata["log_sigma_prior"] = log_sigma_prior
+        g.apply_edges(lambda edges: {"mu_prior": edges.src["mu_prior"]})
+        g.apply_edges(
+            lambda edges: {"log_sigma_prior": edges.src["log_sigma_prior"]}
+        )
+        mu_prior, log_sigma_prior = g.edata["mu_prior"], g.edata["log_sigma_prior"]
+        mu_prior = mu_prior.unsqueeze(-1)
+        log_sigma_prior = log_sigma_prior.unsqueeze(-1)
+
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
@@ -171,18 +188,8 @@ class BronxLayer(pyro.nn.PyroModule):
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
                         pyro.distributions.Normal(
-                            torch.zeros(
-                                g.number_of_edges(),
-                                self.num_heads,
-                                1,
-                                device=g.device,
-                            ),
-                            self.sigma_factor * torch.ones(
-                                g.number_of_edges(),
-                                self.num_heads,
-                                1,
-                                device=g.device,
-                            ),
+                            mu_prior,
+                            self.sigma_factor * log_sigma_prior.exp(),
                         ),
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),

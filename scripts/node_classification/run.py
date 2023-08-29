@@ -25,9 +25,9 @@ def get_graph(data):
     g = locals()[data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
     # g = dgl.add_self_loop(g)
-    src, dst = g.edges()
-    eids = torch.where(src > dst)[0]
-    g = dgl.remove_edges(g, eids)
+    # src, dst = g.edges()
+    # eids = torch.where(src > dst)[0]
+    # g = dgl.remove_edges(g, eids)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
     if "train_mask" not in g.ndata:
