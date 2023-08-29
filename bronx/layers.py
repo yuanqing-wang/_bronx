@@ -91,6 +91,7 @@ class BronxLayer(pyro.nn.PyroModule):
             num_heads=4,
             sigma_factor=1.0,
             kl_scale=1.0,
+            kl_scale_node=1.0,
             t=1.0,
             adjoint=False,
             physique=False,
@@ -100,10 +101,13 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_mu = torch.nn.Linear(in_features, out_features)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features)
         self.fc_k = torch.nn.Linear(in_features, out_features)
-        # torch.nn.init.constant_(self.fc_k.weight, 1e-5)
-        # torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
-        # torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
+        torch.nn.init.constant_(self.fc_k.weight, 1e-5)
+        torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
+        torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
 
+        self.fc_mu_node = torch.nn.Linear(in_features, in_features)
+        self.fc_log_sigma_node = torch.nn.Linear(in_features, in_features)
+        self.kl_scale_node = kl_scale_node
         self.activation = activation
         self.idx = idx
         self.in_features = in_features
@@ -117,7 +121,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def guide(self, g, h):
         g = g.local_var()
-        h0 = h
         # h = h - h.mean(-1, keepdims=True)
         # h = torch.nn.functional.normalize(h, dim=-1)
         mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
@@ -157,12 +160,23 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h0, e)
+        with pyro.plate(
+            f"nodes{self.idx}", g.number_of_nodes(), device=g.device
+        ):
+            with pyro.poutine.scale(None, self.kl_scale_node):
+                h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        self.fc_mu_node(h),
+                        self.fc_log_sigma_node(h).exp(),
+                    ).to_event(1),
+                )
+
+        h = self.linear_diffusion(g, h, e)
         return h
 
     def forward(self, g, h):
         g = g.local_var()
-        h0 = h
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
@@ -186,6 +200,18 @@ class BronxLayer(pyro.nn.PyroModule):
                         ),
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),
+                )
+
+        with pyro.plate(
+            f"nodes{self.idx}", g.number_of_nodes(), device=g.device
+        ):
+            with pyro.poutine.scale(None, self.kl_scale_node):
+                h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        torch.zeros_like(h),
+                        torch.ones_like(h),
+                    ).to_event(1),
                 )
 
         h = self.linear_diffusion(g, h, e)
