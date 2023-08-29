@@ -23,24 +23,16 @@ class BronxModel(pyro.nn.PyroModule):
             gamma=1.0,
             dropout_in=0.0,
             dropout_out=0.0,
+            n_steps=2,
         ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
-
-        fc_out = []
-        for idx in range(readout_depth-1):
-            fc_out.append(activation)
-            fc_out.append(
-                torch.nn.Linear(hidden_features, hidden_features, bias=False)
-            )
-        fc_out.append(activation)
-        fc_out.append(
-            torch.nn.Linear(hidden_features, out_features, bias=False)
+        self.fc_out = torch.nn.Sequential(
+            activation,
+            torch.nn.Linear(n_steps*hidden_features, out_features, bias=False),
         )
-        self.fc_out = torch.nn.Sequential(*fc_out)
 
         self.alpha = alpha
         self.log_alpha = torch.nn.Parameter(
@@ -62,12 +54,9 @@ class BronxModel(pyro.nn.PyroModule):
                 adjoint=adjoint,
                 physique=physique,
                 gamma=gamma,
+                n_steps=n_steps,
             )
             
-            if idx > 0:
-                layer.fc_mu = self.layer0.fc_mu
-                layer.fc_log_sigma = self.layer0.fc_log_sigma
-
             setattr(
                 self,
                 f"layer{idx}",

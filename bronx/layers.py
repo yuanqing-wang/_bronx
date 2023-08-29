@@ -40,7 +40,7 @@ class ODEFunc(torch.nn.Module):
         return x
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, t, adjoint=False, physique=False, gamma=1.0):
+    def __init__(self, t, adjoint=False, physique=False, gamma=1.0, n_steps=2):
         super().__init__()
         self.odefunc = ODEFunc(gamma=gamma)
         self.register_buffer("t", torch.tensor(t))
@@ -49,6 +49,7 @@ class LinearDiffusion(torch.nn.Module):
             self.integrator = odeint_adjoint
         else:
             self.integrator = odeint
+        self.n_steps = n_steps
 
     def forward(self, g, h, e):
         g = g.local_var()
@@ -71,14 +72,20 @@ class LinearDiffusion(torch.nn.Module):
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
-        t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
+        # t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
+        t = torch.linspace(0.0, self.t, steps=self.n_steps, device=h.device, dtype=h.dtype)
         x = torch.cat([h.flatten(), g.edata["e"].flatten()])
-        x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
-        h, e = x[:h.numel()], x[h.numel():]
-        h = h.reshape(*node_shape)
+        x = self.integrator(self.odefunc, x, t, method="dopri5")
+        h = x[:, :h.numel()]
+        h = h.reshape(self.n_steps, *node_shape)
+        h = torch.movedim(h, 0, -1)
+        # h = h.reshape(*node_shape)
+        # h = h.reshape(*node_shape, self.n_steps)
+        # h = h[..., -1]
         if parallel:
             h = h.swapaxes(0, 1)
-        h = h.flatten(-2, -1)
+        # h = h[..., -1]
+        h = h.flatten(-3, -1)
         return h
 
 class BronxLayer(pyro.nn.PyroModule):
@@ -95,6 +102,7 @@ class BronxLayer(pyro.nn.PyroModule):
             adjoint=False,
             physique=False,
             gamma=1.0,
+            n_steps=2,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features)
@@ -112,7 +120,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
         self.linear_diffusion = LinearDiffusion(
-            t, adjoint=adjoint, physique=physique, gamma=gamma,
+            t, adjoint=adjoint, physique=physique, gamma=gamma, n_steps=n_steps,
         )
 
     def guide(self, g, h):

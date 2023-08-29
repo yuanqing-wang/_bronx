@@ -81,6 +81,7 @@ def run(args):
         gamma=args.gamma,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
+        n_steps=5,
     )
  
     if torch.cuda.is_available():
@@ -115,29 +116,32 @@ def run(args):
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    model.eval()
-    swap_swa_sgd(svi.optim)
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+        model.eval()
+        # swap_swa_sgd(svi.optim)
+        with torch.no_grad():
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
+                "_RETURN"
+            ].mean(0)
 
-        if len(args.checkpoint) > 1:
-            torch.save(model, args.checkpoint)
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
 
-    print("ACCURACY: %.6f" % accuracy_vl, flush=True)
+            print(accuracy_vl, loss)
+
+            if len(args.checkpoint) > 1:
+                torch.save(model, args.checkpoint)
+
+        print("ACCURACY: %.6f" % accuracy_vl, flush=True)
     return accuracy_vl
 
 if __name__ == "__main__":
