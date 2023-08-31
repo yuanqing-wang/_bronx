@@ -95,11 +95,13 @@ class BronxLayer(pyro.nn.PyroModule):
             adjoint=False,
             physique=False,
             gamma=1.0,
+            temperature=1.0,
         ):
         super().__init__()
-        self.fc_mu = torch.nn.Linear(in_features, out_features)
-        self.fc_log_sigma = torch.nn.Linear(in_features, out_features)
-        self.fc_k = torch.nn.Linear(in_features, out_features)
+        self.fc_k_mu = torch.nn.Linear(in_features, out_features)
+        self.fc_k_log_sigma = torch.nn.Linear(in_features, out_features)
+        self.fc_q_mu = torch.nn.Linear(in_features, out_features)
+        self.fc_q_log_sigma = torch.nn.Linear(in_features, out_features)
         # torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         # torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
         # torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
@@ -111,6 +113,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.num_heads = num_heads
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
+        self.temperature = temperature
         self.linear_diffusion = LinearDiffusion(
             t, adjoint=adjoint, physique=physique, gamma=gamma,
         )
@@ -118,75 +121,78 @@ class BronxLayer(pyro.nn.PyroModule):
     def guide(self, g, h):
         g = g.local_var()
         h0 = h
-        # h = h - h.mean(-1, keepdims=True)
-        # h = torch.nn.functional.normalize(h, dim=-1)
-        mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
-        mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
-        log_sigma = log_sigma.reshape(
-            *log_sigma.shape[:-1], self.num_heads, -1
-        )
+        k_mu, k_log_sigma = self.fc_k_mu(h), self.fc_k_log_sigma(h)
+        q_mu, q_log_sigma = self.fc_q_mu(h), self.fc_q_log_sigma(h)
+
+        with pyro.plate(f"nodes{self.idx}", g.number_of_nodes()):
+            k = pyro.sample(
+                f"k{self.idx}",
+                pyro.distributions.Normal(
+                    k_mu, self.sigma_factor * k_log_sigma.exp()
+                ).to_event(1),
+            )
+
+            q = pyro.sample(
+                f"q{self.idx}",
+                pyro.distributions.Normal(
+                    q_mu, self.sigma_factor * q_log_sigma.exp()
+                ).to_event(1),
+            )
+
         k = k.reshape(*k.shape[:-1], self.num_heads, -1)
+        q = q.reshape(*q.shape[:-1], self.num_heads, -1)
 
         parallel = h.dim() == 3
-
-        if parallel:
-            mu, log_sigma, k = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1), k.swapaxes(0, 1)
-
-        g.ndata["mu"], g.ndata["log_sigma"], g.ndata["k"] = mu, log_sigma, k
-        g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu"))
-        g.apply_edges(
-            dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
-        )
-        mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
-
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
-        with pyro.plate(
-            f"edges{self.idx}", g.number_of_edges(), device=g.device
-        ):
-            with pyro.poutine.scale(None, self.kl_scale):
-                e = pyro.sample(
-                    f"e{self.idx}",
-                    pyro.distributions.TransformedDistribution(
-                        pyro.distributions.Normal(
-                            mu,
-                            self.sigma_factor * log_sigma.exp(),
-                        ),
-                        pyro.distributions.transforms.SigmoidTransform(),
-                    ).to_event(2),
-                )
+        g.ndata["k"], g.ndata["q"] = k, q
+        g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
+        e = g.edata["e"]
+        e = e * self.temperature
+        e = edge_softmax(g, e)
+
+        if parallel:
+            e = e.swapaxes(0, 1)
 
         h = self.linear_diffusion(g, h0, e)
         return h
 
     def forward(self, g, h):
         g = g.local_var()
-        h0 = h
-        with pyro.plate(
-            f"edges{self.idx}", g.number_of_edges(), device=g.device
-        ):
-            with pyro.poutine.scale(None, self.kl_scale):
-                e = pyro.sample(
-                    f"e{self.idx}",
-                    pyro.distributions.TransformedDistribution(
-                        pyro.distributions.Normal(
-                            torch.zeros(
-                                g.number_of_edges(),
-                                self.num_heads,
-                                1,
-                                device=g.device,
-                            ),
-                            self.sigma_factor * torch.ones(
-                                g.number_of_edges(),
-                                self.num_heads,
-                                1,
-                                device=g.device,
-                            ),
-                        ),
-                        pyro.distributions.transforms.SigmoidTransform(),
-                    ).to_event(2),
-                )
+
+        with pyro.plate(f"nodes{self.idx}", g.number_of_nodes()):
+            k = pyro.sample(
+                f"k{self.idx}",
+                pyro.distributions.Normal(
+                    torch.ones(g.number_of_nodes, self.out_features, device=h.device),
+                    self.sigma_factor,
+                ).to_event(1),
+            )
+
+            q = pyro.sample(
+                f"q{self.idx}",
+                pyro.distributions.Normal(
+                    torch.ones(g.number_of_nodes, self.out_features, device=h.device),
+                    self.sigma_factor,
+                ).to_event(1),
+            )
+
+        k = k.reshape(*k.shape[:-1], self.num_heads, -1)
+        q = q.reshape(*q.shape[:-1], self.num_heads, -1)
+
+        parallel = h.dim() == 3
+        if parallel:
+            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+
+        g.ndata["k"], g.ndata["q"] = k, q
+        g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
+        e = g.edata["e"]
+        e = e * self.temperature
+        e = edge_softmax(g, e)
+
+        if parallel:
+            e = e.swapaxes(0, 1)
 
         h = self.linear_diffusion(g, h, e)
         return h
