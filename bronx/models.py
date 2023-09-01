@@ -12,12 +12,10 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features=None,
             activation=torch.nn.SiLU(),
             depth=1,
-            readout_depth=1,
             num_heads=4,
             sigma_factor=1.0,
             kl_scale=1.0,
             t=1.0,
-            alpha=0.1,
             adjoint=False,
             physique=False,
             gamma=1.0,
@@ -30,22 +28,6 @@ class BronxModel(pyro.nn.PyroModule):
         self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
         self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
 
-        fc_out = []
-        for idx in range(readout_depth-1):
-            fc_out.append(activation)
-            fc_out.append(
-                torch.nn.Linear(hidden_features, hidden_features, bias=False)
-            )
-        fc_out.append(activation)
-        fc_out.append(
-            torch.nn.Linear(hidden_features, out_features, bias=False)
-        )
-        self.fc_out = torch.nn.Sequential(*fc_out)
-
-        self.alpha = alpha
-        self.log_alpha = torch.nn.Parameter(
-            torch.ones(hidden_features) * math.log(alpha)
-        )
         self.activation = activation
         self.depth = depth
 
@@ -90,6 +72,7 @@ class BronxModel(pyro.nn.PyroModule):
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
         h = self.dropout_out(h)
+        h = self.fc_out(h)
         return h
 
     def forward(self, g, h, *args, **kwargs):
@@ -100,9 +83,6 @@ class BronxModel(pyro.nn.PyroModule):
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
         h = self.dropout_out(h) 
-        # h = self.fc_out(h)
-        # self.node_recover(g, h, h0)
-        # self.edge_recover(g, h)
         h = self.fc_out(h)
         return h
 

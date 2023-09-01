@@ -70,7 +70,6 @@ def run(args):
         hidden_features=args.hidden_features,
         embedding_features=args.embedding_features,
         depth=args.depth,
-        readout_depth=args.readout_depth,
         num_heads=args.num_heads,
         sigma_factor=args.sigma_factor,
         kl_scale=args.kl_scale,
@@ -115,29 +114,30 @@ def run(args):
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    model.eval()
-    swap_swa_sgd(svi.optim)
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+        model.eval()
+        # swap_swa_sgd(svi.optim)
+        with torch.no_grad():
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
+                "_RETURN"
+            ].mean(0)
 
-        if len(args.checkpoint) > 1:
-            torch.save(model, args.checkpoint)
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
 
-    print("ACCURACY: %.6f" % accuracy_vl, flush=True)
+            if len(args.checkpoint) > 1:
+                torch.save(model, args.checkpoint)
+
+        print("ACCURACY: %.6f" % accuracy_vl, flush=True)
     return accuracy_vl
 
 if __name__ == "__main__":
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_samples", type=int, default=64)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=5)
-    parser.add_argument("--sigma_factor", type=float, default=10.0)
+    parser.add_argument("--sigma_factor", type=float, default=1e-3)
     parser.add_argument("--t", type=float, default=5.0)
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--kl_scale", type=float, default=1e-5)
