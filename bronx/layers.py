@@ -95,7 +95,7 @@ class BronxLayer(pyro.nn.PyroModule):
             adjoint=False,
             physique=False,
             gamma=1.0,
-            temperature=1.0,
+            temperature=1e-3,
         ):
         super().__init__()
         self.fc_k_mu = torch.nn.Linear(in_features, out_features)
@@ -142,15 +142,16 @@ class BronxLayer(pyro.nn.PyroModule):
         k = k.reshape(*k.shape[:-1], self.num_heads, -1)
         q = q.reshape(*q.shape[:-1], self.num_heads, -1)
 
-        parallel = h.dim() == 3
+        parallel = k.dim() == 4
         if parallel:
-            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+            k, q = k.swapaxes(0, 1), q.swapaxes(0, 1)
 
         g.ndata["k"], g.ndata["q"] = k, q
         g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
         e = g.edata["e"]
         e = e * self.temperature
         e = edge_softmax(g, e)
+        e = torch.ones_like(e)
 
         if parallel:
             e = e.swapaxes(0, 1)
@@ -165,7 +166,7 @@ class BronxLayer(pyro.nn.PyroModule):
             k = pyro.sample(
                 f"k{self.idx}",
                 pyro.distributions.Normal(
-                    torch.ones(g.number_of_nodes, self.out_features, device=h.device),
+                    torch.ones(g.number_of_nodes(), self.out_features, device=h.device),
                     self.sigma_factor,
                 ).to_event(1),
             )
@@ -173,7 +174,7 @@ class BronxLayer(pyro.nn.PyroModule):
             q = pyro.sample(
                 f"q{self.idx}",
                 pyro.distributions.Normal(
-                    torch.ones(g.number_of_nodes, self.out_features, device=h.device),
+                    torch.ones(g.number_of_nodes(), self.out_features, device=h.device),
                     self.sigma_factor,
                 ).to_event(1),
             )
@@ -181,16 +182,17 @@ class BronxLayer(pyro.nn.PyroModule):
         k = k.reshape(*k.shape[:-1], self.num_heads, -1)
         q = q.reshape(*q.shape[:-1], self.num_heads, -1)
 
-        parallel = h.dim() == 3
+        parallel = k.dim() == 4
         if parallel:
-            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+            k, q = k.swapaxes(0, 1), q.swapaxes(0, 1)
 
         g.ndata["k"], g.ndata["q"] = k, q
         g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
         e = g.edata["e"]
         e = e * self.temperature
         e = edge_softmax(g, e)
-
+        e = torch.ones_like(e)
+        
         if parallel:
             e = e.swapaxes(0, 1)
 
