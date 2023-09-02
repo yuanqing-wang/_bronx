@@ -174,7 +174,7 @@ class BronxLayer(pyro.nn.PyroModule):
         g.ndata["log_sigma_prior"] = log_sigma_prior
         g.apply_edges(lambda edges: {"mu_prior": edges.src["mu_prior"]})
         g.apply_edges(
-            lambda edges: {"log_sigma_prior": edges.src["log_sigma_prior"]}
+            lambda edges: {"log_sigma_prior": edges.dst["log_sigma_prior"]}
         )
         mu_prior, log_sigma_prior = g.edata["mu_prior"], g.edata["log_sigma_prior"]
         mu_prior = mu_prior.unsqueeze(-1)
