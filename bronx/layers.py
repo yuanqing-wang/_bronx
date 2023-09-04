@@ -100,6 +100,10 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
+
+        self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+        self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+
         torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
         torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
@@ -133,11 +137,18 @@ class BronxLayer(pyro.nn.PyroModule):
             mu, log_sigma, k = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1), k.swapaxes(0, 1)
 
         g.ndata["mu"], g.ndata["log_sigma"], g.ndata["k"] = mu, log_sigma, k
-        g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu"))
+        g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu+"))
         g.apply_edges(
-            dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
+            dgl.function.u_dot_v("k", "log_sigma", "log_sigma+")
         )
-        mu, log_sigma = g.edata["mu"], g.edata["log_sigma"]
+
+        g.apply_edges(dgl.function.u_dot_v("mu", "k", "mu-"))
+        g.apply_edges(
+            dgl.function.u_dot_v("log_sigma", "k", "log_sigma-")
+        )
+
+        mu = g.edata["mu+"] + g.edata["mu-"]
+        log_sigma = g.edata["log_sigma+"] + g.edata["log_sigma-"]
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
@@ -162,7 +173,19 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         g = g.local_var()
-        h0 = h
+
+        mu_prior = self.fc_mu_prior(h)
+        log_sigma_prior = self.fc_log_sigma_prior(h)
+        g.ndata["mu_prior"] = mu_prior
+        g.ndata["log_sigma_prior"] = log_sigma_prior
+        g.apply_edges(lambda edges: {"mu_prior": edges.src["mu_prior"]})
+        g.apply_edges(
+            lambda edges: {"log_sigma_prior": edges.dst["log_sigma_prior"]}
+        )
+        mu_prior, log_sigma_prior = g.edata["mu_prior"], g.edata["log_sigma_prior"]
+        mu_prior = mu_prior.unsqueeze(-1)
+        log_sigma_prior = log_sigma_prior.unsqueeze(-1)
+
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
@@ -171,18 +194,8 @@ class BronxLayer(pyro.nn.PyroModule):
                     f"e{self.idx}",
                     pyro.distributions.TransformedDistribution(
                         pyro.distributions.Normal(
-                            torch.zeros(
-                                g.number_of_edges(),
-                                self.num_heads,
-                                1,
-                                device=g.device,
-                            ),
-                            self.sigma_factor * torch.ones(
-                                g.number_of_edges(),
-                                self.num_heads,
-                                1,
-                                device=g.device,
-                            ),
+                            mu_prior,
+                            self.sigma_factor * log_sigma_prior.exp(),
                         ),
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),
@@ -243,6 +256,32 @@ class EdgeRecover(pyro.nn.PyroModule):
                         ),
                     ),
                     obs=torch.zeros(g.number_of_edges(), device=g.device),
+                )
+
+class NeighborhoodRecover(pyro.nn.PyroModule):
+    def __init__(self, in_features, scale=1.0):
+        super().__init__()
+        self.fc_mu = torch.nn.Linear(in_features, in_features, bias=False)
+        self.fc_log_sigma = torch.nn.Linear(in_features, in_features, bias=False)
+        self.scale = scale
+
+    def forward(self, g, h):
+        g = g.local_var()
+        g = dgl.add_reverse_edges(g)
+        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
+        src, dst = g.edges()
+        mu, log_sigma = mu[..., src, :], log_sigma[..., src, :]
+        h = h[..., dst, :]
+
+        with pyro.poutine.scale(None, self.scale):
+            with pyro.plate("neighborhood_recover_plate", g.number_of_edges(), device=g.device):
+                pyro.sample(
+                    "neighborhood_recover",
+                    pyro.distributions.Normal(
+                        mu, 
+                        log_sigma.exp(),
+                    ).to_event(1),
+                    obs=h,
                 )
 
 class BatchedLSTM(torch.nn.LSTM):

@@ -3,7 +3,7 @@ import torch
 import dgl
 import pyro
 from pyro import poutine
-from .layers import BronxLayer, NodeRecover, EdgeRecover
+from .layers import BronxLayer, NodeRecover, EdgeRecover, NeighborhoodRecover
 from dgl.nn.pytorch import GraphConv
 
 class BronxModel(pyro.nn.PyroModule):
@@ -23,6 +23,7 @@ class BronxModel(pyro.nn.PyroModule):
             gamma=1.0,
             dropout_in=0.0,
             dropout_out=0.0,
+            neighbor_recover_scale=1.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -74,12 +75,9 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        # self.node_recover = NodeRecover(
-        #     hidden_features, in_features, scale=node_recover_scale,
-        # )
-        # self.edge_recover = EdgeRecover(
-        #     hidden_features, embedding_features, scale=edge_recover_scale,
-        # )
+        self.neighbor_recover = NeighborhoodRecover(
+            hidden_features, scale=neighbor_recover_scale,
+        )
         self.dropout_in = torch.nn.Dropout(dropout_in)
         self.dropout_out = torch.nn.Dropout(dropout_out)
 
@@ -100,9 +98,7 @@ class BronxModel(pyro.nn.PyroModule):
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
         h = self.dropout_out(h) 
-        # h = self.fc_out(h)
-        # self.node_recover(g, h, h0)
-        # self.edge_recover(g, h)
+        self.neighbor_recover(g, h)
         h = self.fc_out(h)
         return h
 
