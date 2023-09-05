@@ -81,7 +81,7 @@ def run(args):
         gamma=args.gamma,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
-        neighbor_recover_scale=args.neighbor_recover_scale,
+        edge_recover_scale=args.edge_recover_scale,
     )
  
     if torch.cuda.is_available():
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument("--epsilon", type=float, default=1.0)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
-    parser.add_argument("--neighbor_recover_scale", type=float, default=1e-3)
+    parser.add_argument("--edge_recover_scale", type=float, default=1.0)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()

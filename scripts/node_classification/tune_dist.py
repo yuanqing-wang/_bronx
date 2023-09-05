@@ -82,7 +82,7 @@ def experiment(args):
         "swa_lr": tune.loguniform(1e-5, 1e-1),
         "dropout_in": tune.uniform(0, 1),
         "dropout_out": tune.uniform(0, 1),
-        "neighbor_recover_scale": tune.loguniform(1e-10, 1e-1),
+        "edge_recover_scale": tune.loguniform(1e-10, 1e-3),
         "n_epochs": 200,
         "seed": 2666,
     }

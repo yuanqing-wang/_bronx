@@ -173,9 +173,13 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         g = g.local_var()
-
+        parallel = h.dim() == 3
         mu_prior = self.fc_mu_prior(h)
         log_sigma_prior = self.fc_log_sigma_prior(h)
+
+        if parallel:
+            mu_prior, log_sigma_prior = mu_prior.swapaxes(0, 1), log_sigma_prior.swapaxes(0, 1)
+
         g.ndata["mu_prior"] = mu_prior
         g.ndata["log_sigma_prior"] = log_sigma_prior
         g.apply_edges(lambda edges: {"mu_prior": edges.src["mu_prior"]})
@@ -185,6 +189,9 @@ class BronxLayer(pyro.nn.PyroModule):
         mu_prior, log_sigma_prior = g.edata["mu_prior"], g.edata["log_sigma_prior"]
         mu_prior = mu_prior.unsqueeze(-1)
         log_sigma_prior = log_sigma_prior.unsqueeze(-1)
+
+        if parallel:
+            mu_prior, log_sigma_prior = mu_prior.swapaxes(0, 1), log_sigma_prior.swapaxes(0, 1)
 
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
@@ -231,9 +238,8 @@ class EdgeRecover(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         g = g.local_var()
-        h = h - h.mean(-1, keepdims=True)
-        h = torch.nn.functional.normalize(h, dim=-1)
         h = self.fc(h)
+        g = dgl.add_reverse_edges(g)
         src, dst = g.edges()
         src_fake = torch.randint(high=g.number_of_nodes(), size=(g.number_of_edges(),), device=g.device)
         dst_fake = torch.randint(high=g.number_of_nodes(), size=(g.number_of_edges(),), device=g.device)
