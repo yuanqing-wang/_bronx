@@ -34,35 +34,36 @@ def check(path):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=32,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+    for _ in range(100):
+        with torch.no_grad():
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=4,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ]
-        
-        y_hat = y_hat.softmax(-1).mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
+                "_RETURN"
+            ]
+            
+            y_hat = y_hat.softmax(-1).mean(0)
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
-            "_RETURN"
-        ]
-        
-        y_hat = y_hat.softmax(-1).mean(0)
-        y = g.ndata["label"][g.ndata["test_mask"]]
-        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
-        print(accuracy_vl, accuracy_te)
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+                "_RETURN"
+            ]
+            
+            y_hat = y_hat.softmax(-1).mean(0)
+            y = g.ndata["label"][g.ndata["test_mask"]]
+            accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
+            print(accuracy_vl, accuracy_te)
 
 if __name__ == "__main__":
     import sys

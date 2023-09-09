@@ -23,7 +23,6 @@ class BronxModel(pyro.nn.PyroModule):
             gamma=1.0,
             dropout_in=0.0,
             dropout_out=0.0,
-            edge_recover_scale=1.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -75,11 +74,6 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        self.edge_recover = EdgeRecover(
-            hidden_features,
-            hidden_features,
-            scale=edge_recover_scale,
-        )
         self.dropout_in = torch.nn.Dropout(dropout_in)
         self.dropout_out = torch.nn.Dropout(dropout_out)
 
@@ -100,7 +94,6 @@ class BronxModel(pyro.nn.PyroModule):
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
         h = self.dropout_out(h) 
-        self.edge_recover(g, h)
         h = self.fc_out(h)
         return h
 

@@ -81,7 +81,6 @@ def run(args):
         gamma=args.gamma,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
-        edge_recover_scale=args.edge_recover_scale,
     )
  
     if torch.cuda.is_available():
