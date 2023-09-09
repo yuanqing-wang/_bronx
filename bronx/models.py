@@ -21,6 +21,7 @@ class BronxModel(pyro.nn.PyroModule):
             gamma=1.0,
             dropout_in=0.0,
             dropout_out=0.0,
+            temperature=1.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -44,6 +45,7 @@ class BronxModel(pyro.nn.PyroModule):
                 adjoint=adjoint,
                 physique=physique,
                 gamma=gamma,
+                temperature=temperature,
             )
             
             if idx > 0:
@@ -62,6 +64,7 @@ class BronxModel(pyro.nn.PyroModule):
         # self.edge_recover = EdgeRecover(
         #     hidden_features, embedding_features, scale=edge_recover_scale,
         # )
+        
         self.dropout_in = torch.nn.Dropout(dropout_in)
         self.dropout_out = torch.nn.Dropout(dropout_out)
 

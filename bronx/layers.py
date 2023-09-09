@@ -62,9 +62,6 @@ class LinearDiffusion(torch.nn.Module):
         h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
 
         g.edata["e"] = e
-        g = dgl.add_reverse_edges(g, copy_ndata=True, copy_edata=True)
-        g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
-        g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
         if self.physique is not None:
             self.odefunc.h0 = h.clone().detach()
@@ -95,16 +92,14 @@ class BronxLayer(pyro.nn.PyroModule):
             adjoint=False,
             physique=False,
             gamma=1.0,
-            temperature=1e-3,
+            temperature=1.0,
         ):
         super().__init__()
-        self.fc_k_mu = torch.nn.Linear(in_features, out_features)
-        self.fc_k_log_sigma = torch.nn.Linear(in_features, out_features)
-        self.fc_q_mu = torch.nn.Linear(in_features, out_features)
-        self.fc_q_log_sigma = torch.nn.Linear(in_features, out_features)
-        # torch.nn.init.constant_(self.fc_k.weight, 1e-5)
-        # torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
-        # torch.nn.init.constant_(self.fc_mu.weight, 1e-5)
+        
+        self.fc_mu = torch.nn.Linear(in_features, in_features)
+        self.fc_log_sigma = torch.nn.Linear(in_features, in_features)
+        self.fc_k = torch.nn.Linear(in_features, out_features)
+        self.fc_q = torch.nn.Linear(in_features, out_features)
 
         self.activation = activation
         self.idx = idx
@@ -121,23 +116,19 @@ class BronxLayer(pyro.nn.PyroModule):
     def guide(self, g, h):
         g = g.local_var()
         h0 = h
-        k_mu, k_log_sigma = self.fc_k_mu(h), self.fc_k_log_sigma(h)
-        q_mu, q_log_sigma = self.fc_q_mu(h), self.fc_q_log_sigma(h)
 
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes()):
-            k = pyro.sample(
-                f"k{self.idx}",
-                pyro.distributions.Normal(
-                    k_mu, self.sigma_factor * k_log_sigma.exp()
-                ).to_event(1),
-            )
+            with pyro.poutine.scale(None, self.kl_scale):
+                h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        self.fc_mu(h),
+                        self.fc_log_sigma(h).exp(),
+                    ).to_event(1),
+                )
 
-            q = pyro.sample(
-                f"q{self.idx}",
-                pyro.distributions.Normal(
-                    q_mu, self.sigma_factor * q_log_sigma.exp()
-                ).to_event(1),
-            )
+        k = self.fc_k(h)
+        q = self.fc_q(h)
 
         k = k.reshape(*k.shape[:-1], self.num_heads, -1)
         q = q.reshape(*q.shape[:-1], self.num_heads, -1)
@@ -150,9 +141,9 @@ class BronxLayer(pyro.nn.PyroModule):
         g.apply_edges(dgl.function.u_dot_v("k", "q", "e"))
         e = g.edata["e"]
         e = e * self.temperature
+        # e = torch.zeros_like(e)
         e = edge_softmax(g, e)
-        e = torch.ones_like(e)
-
+        
         if parallel:
             e = e.swapaxes(0, 1)
 
@@ -161,23 +152,20 @@ class BronxLayer(pyro.nn.PyroModule):
 
     def forward(self, g, h):
         g = g.local_var()
+        h0 = h
 
         with pyro.plate(f"nodes{self.idx}", g.number_of_nodes()):
-            k = pyro.sample(
-                f"k{self.idx}",
-                pyro.distributions.Normal(
-                    torch.ones(g.number_of_nodes(), self.out_features, device=h.device),
-                    self.sigma_factor,
-                ).to_event(1),
-            )
+            with pyro.poutine.scale(None, self.kl_scale):
+                h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        torch.ones(self.in_features, device=h.device),
+                        self.sigma_factor,
+                    ).to_event(1),
+                )
 
-            q = pyro.sample(
-                f"q{self.idx}",
-                pyro.distributions.Normal(
-                    torch.ones(g.number_of_nodes(), self.out_features, device=h.device),
-                    self.sigma_factor,
-                ).to_event(1),
-            )
+        k = self.fc_k(h)
+        q = self.fc_q(h)
 
         k = k.reshape(*k.shape[:-1], self.num_heads, -1)
         q = q.reshape(*q.shape[:-1], self.num_heads, -1)
@@ -191,12 +179,12 @@ class BronxLayer(pyro.nn.PyroModule):
         e = g.edata["e"]
         e = e * self.temperature
         e = edge_softmax(g, e)
-        e = torch.ones_like(e)
         
+
         if parallel:
             e = e.swapaxes(0, 1)
 
-        h = self.linear_diffusion(g, h, e)
+        h = self.linear_diffusion(g, h0, e)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):

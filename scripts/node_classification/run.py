@@ -24,10 +24,8 @@ def get_graph(data):
 
     g = locals()[data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
-    # g = dgl.add_self_loop(g)
-    src, dst = g.edges()
-    eids = torch.where(src > dst)[0]
-    g = dgl.remove_edges(g, eids)
+    g = dgl.add_self_loop(g)
+    print(g)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
     if "train_mask" not in g.ndata:
@@ -80,6 +78,7 @@ def run(args):
         gamma=args.gamma,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
+        temperature=args.temperature,
     )
  
     if torch.cuda.is_available():
@@ -87,16 +86,20 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = SWA(
-        {
-            "base": getattr(torch.optim, args.optimizer),
-            "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "swa_args": {
-                "swa_start": args.swa_start, 
-                "swa_freq": args.swa_freq, 
-                "swa_lr": args.swa_lr,
-            },
-        }
+    # optimizer = SWA(
+    #     {
+    #         "base": getattr(torch.optim, args.optimizer),
+    #         "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+    #         "swa_args": {
+    #             "swa_start": args.swa_start, 
+    #             "swa_freq": args.swa_freq, 
+    #             "swa_lr": args.swa_lr,
+    #         },
+    #     }
+    # )
+
+    optimizer = getattr(pyro.optim, args.optimizer)(
+        {"lr": args.learning_rate, "weight_decay": args.weight_decay},
     )
 
     svi = pyro.infer.SVI(
@@ -113,6 +116,8 @@ def run(args):
         loss = svi.step(
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
+
+        print(loss)
 
         model.eval()
         # swap_swa_sgd(svi.optim)
@@ -148,14 +153,14 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_features", type=int, default=20)
     parser.add_argument("--activation", type=str, default="SiLU")
     parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--weight_decay", type=float, default=1e-10)
     parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--num_samples", type=int, default=64)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=5)
     parser.add_argument("--sigma_factor", type=float, default=1e-3)
-    parser.add_argument("--t", type=float, default=5.0)
-    parser.add_argument("--optimizer", type=str, default="AdamW")
+    parser.add_argument("--t", type=float, default=1.0)
+    parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--kl_scale", type=float, default=1e-5)
     parser.add_argument("--n_epochs", type=int, default=50)
     parser.add_argument("--adjoint", type=int, default=0)
@@ -166,6 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("--swa_freq", type=int, default=10)
     parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--epsilon", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
     parser.add_argument("--checkpoint", type=str, default="")
