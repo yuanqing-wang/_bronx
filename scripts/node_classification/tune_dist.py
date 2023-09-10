@@ -60,15 +60,15 @@ def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
     param_space = {
         "data": args.data,
-        "hidden_features": tune.randint(4, 8),
-        "embedding_features": tune.randint(4, 8),
+        "hidden_features": tune.randint(2, 8),
+        "embedding_features": tune.randint(2, 8),
         "num_heads": tune.randint(4, 32),
         "depth": 1,
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
         "num_samples": 32,
         "num_particles": 8,
-        "sigma_factor": tune.uniform(0.01, 10.0),
+        "sigma_factor": tune.uniform(1.0, 10.0),
         "t": tune.uniform(0.5, 10.0),
         "optimizer": tune.choice(["RMSprop", "Adam", "AdamW"]),
         "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
@@ -80,7 +80,7 @@ def experiment(args):
         "swa_start": tune.randint(1, 50),
         "swa_freq": tune.randint(1, 50),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
-        "n_epochs": 200,
+        "n_epochs": 100,
         "seed": 2666,
     }
 
