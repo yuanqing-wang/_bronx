@@ -21,8 +21,8 @@ class BronxModel(pyro.nn.PyroModule):
             adjoint=False,
             physique=False,
             gamma=1.0,
-            dropout_in=0.0,
-            dropout_out=0.0,
+            # dropout_in=0.0,
+            # dropout_out=0.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -74,26 +74,26 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        self.dropout_in = torch.nn.Dropout(dropout_in)
-        self.dropout_out = torch.nn.Dropout(dropout_out)
+        # self.dropout_in = torch.nn.Dropout(dropout_in)
+        # self.dropout_out = torch.nn.Dropout(dropout_out)
 
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)        
-        h = self.dropout_in(h)
+        # h = self.dropout_in(h)
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
-        h = self.dropout_out(h)
+        # h = self.dropout_out(h)
         return h
 
     def forward(self, g, h, *args, **kwargs):
         g = g.local_var()
         h0 = h
         h = self.fc_in(h)
-        h = self.dropout_in(h)
+        # h = self.dropout_in(h)
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
-        h = self.dropout_out(h) 
+        # h = self.dropout_out(h) 
         h = self.fc_out(h)
         return h
 
