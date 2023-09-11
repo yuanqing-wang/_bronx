@@ -110,7 +110,12 @@ class NodeClassificationBronxModel(BronxModel):
                 y = y[..., mask, :]
 
         if y is not None:
-            with pyro.plate("data", y.shape[0], device=h.device):
+            with pyro.plate(
+                "data", y.shape[0], 
+                device=h.device, 
+            ) as idx:
+                y = y[..., idx, :]
+                h = h[..., idx, :]
                 pyro.sample(
                     "y",
                     pyro.distributions.OneHotCategorical(logits=h),

@@ -77,10 +77,10 @@ def experiment(args):
         "gamma": tune.uniform(0.0, 1.0),
         "readout_depth": 1,
         "kl_scale": tune.loguniform(1e-10, 1e-2),
-        "swa_start": tune.randint(1, 50),
-        "swa_freq": tune.randint(1, 50),
+        "swa_start": tune.randint(1, 30),
+        "swa_freq": tune.randint(1, 20),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
-        "n_epochs": 100,
+        "n_epochs": tune.randint(50, 200),
         "seed": 2666,
     }
 
@@ -88,7 +88,7 @@ def experiment(args):
         metric="_metric/accuracy",
         mode="max",
         search_alg=ConcurrencyLimiter(OptunaSearch(), args.concurrent),
-        num_samples=5000,
+        num_samples=20000,
     )
 
     run_config = air.RunConfig(
@@ -109,6 +109,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--concurrent", type=int, default=50)
+    parser.add_argument("--concurrent", type=int, default=100)
     args = parser.parse_args()
     experiment(args)

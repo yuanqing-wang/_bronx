@@ -79,8 +79,6 @@ def run(args):
         activation=getattr(torch.nn, args.activation)(),
         physique=args.physique,
         gamma=args.gamma,
-        # dropout_in=args.dropout_in,
-        # dropout_out=args.dropout_out,
     )
  
     if torch.cuda.is_available():
@@ -167,6 +165,7 @@ if __name__ == "__main__":
     parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--epsilon", type=float, default=1.0)
     parser.add_argument("--edge_recover_scale", type=float, default=1.0)
+    parser.add_argument("--subsample_size", type=int, default=100)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()
