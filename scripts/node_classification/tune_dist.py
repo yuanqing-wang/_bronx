@@ -81,6 +81,9 @@ def experiment(args):
         "swa_freq": tune.randint(1, 20),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
         "n_epochs": tune.randint(50, 200),
+        "dropout_in": tune.uniform(0.0, 1.0),
+        "dropout_out": tune.uniform(0.0, 1.0),
+        "num_factors": tune.randint(1, 10),
         "seed": 2666,
     }
 

@@ -79,6 +79,7 @@ def run(args):
         activation=getattr(torch.nn, args.activation)(),
         physique=args.physique,
         gamma=args.gamma,
+        num_factors=args.num_factors,
     )
  
     if torch.cuda.is_available():
@@ -149,7 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--num_samples", type=int, default=64)
-    parser.add_argument("--num_particles", type=int, default=32)
+    parser.add_argument("--num_particles", type=int, default=64)
     parser.add_argument("--num_heads", type=int, default=5)
     parser.add_argument("--sigma_factor", type=float, default=10.0)
     parser.add_argument("--t", type=float, default=5.0)
@@ -166,6 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--epsilon", type=float, default=1.0)
     parser.add_argument("--edge_recover_scale", type=float, default=1.0)
     parser.add_argument("--subsample_size", type=int, default=100)
+    parser.add_argument("--num_factors", type=int, default=1)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()
