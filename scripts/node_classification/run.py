@@ -25,9 +25,9 @@ def get_graph(data):
     g = locals()[data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
     # g = dgl.add_self_loop(g)
-    src, dst = g.edges()
-    eids = torch.where(src > dst)[0]
-    g = dgl.remove_edges(g, eids)
+    # src, dst = g.edges()
+    # eids = torch.where(src > dst)[0]
+    # g = dgl.remove_edges(g, eids)
     g.ndata["label"] = torch.nn.functional.one_hot(g.ndata["label"])
 
     if "train_mask" not in g.ndata:
@@ -64,6 +64,10 @@ def run(args):
 
     g = get_graph(args.data)
 
+    if args.k > 0:
+        h_pe = dgl.random_walk_pe(g, k=args.k)
+        g.ndata["feat"] = torch.cat([g.ndata["feat"], h_pe], dim=-1)
+
     model = NodeClassificationBronxModel(
         in_features=g.ndata["feat"].shape[-1],
         out_features=g.ndata["label"].shape[-1],
@@ -79,6 +83,9 @@ def run(args):
         activation=getattr(torch.nn, args.activation)(),
         physique=args.physique,
         gamma=args.gamma,
+        dropout_in=args.dropout_in,
+        dropout_out=args.dropout_out,
+        norm=bool(args.norm),
     )
  
     if torch.cuda.is_available():
@@ -163,9 +170,11 @@ if __name__ == "__main__":
     parser.add_argument("--swa_start", type=int, default=20)
     parser.add_argument("--swa_freq", type=int, default=10)
     parser.add_argument("--swa_lr", type=float, default=1e-2)
-    parser.add_argument("--epsilon", type=float, default=1.0)
-    parser.add_argument("--edge_recover_scale", type=float, default=1.0)
+    parser.add_argument("--dropout_in", type=float, default=0.0)
+    parser.add_argument("--dropout_out", type=float, default=0.0)
+    parser.add_argument("--norm", type=int, default=0)
     parser.add_argument("--subsample_size", type=int, default=100)
+    parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()
