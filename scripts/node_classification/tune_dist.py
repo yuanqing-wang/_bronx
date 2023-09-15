@@ -84,6 +84,7 @@ def experiment(args):
         "n_epochs": tune.randint(50, 200),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
+        "num_factors": tune.randint(1, 10),
         "seed": 2666,
     }
 

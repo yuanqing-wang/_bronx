@@ -86,6 +86,7 @@ def run(args):
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
         norm=bool(args.norm),
+        num_factors=args.num_factors,
     )
  
     if torch.cuda.is_available():
@@ -175,6 +176,7 @@ if __name__ == "__main__":
     parser.add_argument("--norm", type=int, default=0)
     parser.add_argument("--subsample_size", type=int, default=100)
     parser.add_argument("--k", type=int, default=0)
+    parser.add_argument("--num_factors", type=int, default=1)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()

@@ -24,6 +24,7 @@ class BronxModel(pyro.nn.PyroModule):
             dropout_in=0.0,
             dropout_out=0.0,
             norm=False,
+            num_factors=1,
         ):
         super().__init__()
         if embedding_features is None:
@@ -64,6 +65,7 @@ class BronxModel(pyro.nn.PyroModule):
                 physique=physique,
                 gamma=gamma,
                 norm=norm,
+                num_factors=num_factors,
             )
             
             if idx > 0:
