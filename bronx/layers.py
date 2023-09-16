@@ -95,13 +95,11 @@ class BronxLayer(pyro.nn.PyroModule):
             physique=False,
             gamma=1.0,
             norm=False,
-            num_factors=1,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
-        # self.fc_factor = torch.nn.Linear(in_features, out_features*num_factors, bias=False)
 
         self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
         self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
@@ -109,7 +107,6 @@ class BronxLayer(pyro.nn.PyroModule):
         torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
         torch.nn.init.constant_(self.fc_mu.weight, 1e-5) 
-        # torch.nn.init.constant_(self.fc_factor.weight, 1e-5)
 
         self.activation = activation
         self.idx = idx
@@ -130,30 +127,23 @@ class BronxLayer(pyro.nn.PyroModule):
             h = h - h.mean(-1, keepdims=True)
             h = torch.nn.functional.normalize(h, dim=-1)
         mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
-        # factor = self.fc_factor(h)
+
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
         log_sigma = log_sigma.reshape(
             *log_sigma.shape[:-1], self.num_heads, -1
         )
         k = k.reshape(*k.shape[:-1], self.num_heads, -1)
-        # factor = factor.reshape(*factor.shape[:-1], self.num_heads, self.num_factors, -1)
 
         parallel = h.dim() == 3
 
         if parallel:
             mu, log_sigma, k = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1), k.swapaxes(0, 1)
-            # factor = factor.swapaxes(0, 1)
 
         g.ndata["mu"], g.ndata["log_sigma"], g.ndata["k"] = mu, log_sigma, k
-        # g.ndata["factor"] = factor
-        # g.ndata["k_"] = k.unsqueeze(-1)
         g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu"))
         g.apply_edges(
             dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
         )
-        # g.apply_edges(
-        #     dgl.function.u_dot_v("k_", "factor", "factor")
-        # )
 
         mu = g.edata["mu"]
         log_sigma = g.edata["log_sigma"] 
