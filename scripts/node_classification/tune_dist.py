@@ -78,9 +78,6 @@ def experiment(args):
         "gamma": tune.uniform(0.0, 1.0),
         "readout_depth": 1,
         "kl_scale": tune.loguniform(1e-5, 1e-2),
-        "swa_start": tune.randint(1, 30),
-        "swa_freq": tune.randint(1, 20),
-        "swa_lr": tune.loguniform(1e-5, 1e-1),
         "n_epochs": tune.randint(50, 200),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
@@ -91,7 +88,7 @@ def experiment(args):
         metric="_metric/accuracy",
         mode="max",
         search_alg=ConcurrencyLimiter(OptunaSearch(), args.concurrent),
-        num_samples=20000,
+        num_samples=5000,
     )
 
     run_config = air.RunConfig(
