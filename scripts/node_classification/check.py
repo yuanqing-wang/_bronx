@@ -30,12 +30,13 @@ def check(path):
     g = get_graph(results[0]["config"]["data"])
 
 
-    model = torch.load(results[0]["config"]["checkpoint"])
+    if torch.cuda.is_available():
+        model = torch.load(results[0]["config"]["checkpoint"])
+        g = g.to("cuda:0")
+    else:
+        model = torch.load(results[0]["config"]["checkpoint"], map_location="cpu")
     model.eval()
 
-    if torch.cuda.is_available():
-        model = model.cuda()
-        g = g.to("cuda:0")
 
     with torch.no_grad():
         predictive = pyro.infer.Predictive(
