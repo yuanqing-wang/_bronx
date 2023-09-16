@@ -93,17 +93,11 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = SWA(
-        {
-            "base": getattr(torch.optim, args.optimizer),
-            "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "swa_args": {
-                "swa_start": args.swa_start, 
-                "swa_freq": args.swa_freq, 
-                "swa_lr": args.swa_lr,
-            },
-        }
+
+    optimizer = getattr(pyro.optim, args.optimizer)(
+        {"lr": args.learning_rate, "weight_decay": args.weight_decay}, 
     )
+
 
     svi = pyro.infer.SVI(
         model,
@@ -121,7 +115,6 @@ def run(args):
         )
 
     model.eval()
-    swap_swa_sgd(svi.optim)
     with torch.no_grad():
         predictive = pyro.infer.Predictive(
             model,
@@ -167,9 +160,6 @@ if __name__ == "__main__":
     parser.add_argument("--physique", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
-    parser.add_argument("--swa_start", type=int, default=20)
-    parser.add_argument("--swa_freq", type=int, default=10)
-    parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
     parser.add_argument("--norm", type=int, default=0)
