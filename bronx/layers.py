@@ -110,7 +110,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
         self.activation = activation
         self.idx = idx
-        self.norm = norm
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
@@ -120,12 +119,16 @@ class BronxLayer(pyro.nn.PyroModule):
             t, adjoint=adjoint, physique=physique, gamma=gamma,
         )
 
+        if norm:
+            self.norm = torch.nn.LayerNorm(in_features)
+        else:
+            self.norm = None
+
     def guide(self, g, h):
         g = g.local_var()
         h0 = h
         if self.norm:
-            h = h - h.mean(-1, keepdims=True)
-            h = torch.nn.functional.normalize(h, dim=-1)
+            h = self.norm(h)
         mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
 
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
@@ -167,11 +170,13 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h0, e)
+        h = self.linear_diffusion(g, h, e)
         return h
 
     def forward(self, g, h):
         g = g.local_var()
+        if self.norm:
+            h = self.norm(h)
         mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
         src, dst = g.edges()
         mu = mu[..., dst, :]

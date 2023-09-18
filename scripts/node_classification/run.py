@@ -93,16 +93,21 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-
-    optimizer = getattr(pyro.optim, args.optimizer)(
-        {"lr": args.learning_rate, "weight_decay": args.weight_decay}, 
+    optimizer = getattr(torch.optim, args.optimizer)
+    scheduler = pyro.optim.ReduceLROnPlateau(
+        {
+            "optimizer": optimizer,
+            "optim_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
+            "factor": args.factor,
+            "patience": args.patience,
+            "mode": "max"
+        }
     )
-
 
     svi = pyro.infer.SVI(
         model,
         model.guide,
-        optimizer,
+        scheduler,
         loss=pyro.infer.TraceMeanField_ELBO(
             num_particles=args.num_particles, vectorize_particles=True
         ),
@@ -114,28 +119,44 @@ def run(args):
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    model.eval()
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+        model.eval()
+        with torch.no_grad():
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
+                "_RETURN"
+            ].mean(0)
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
+        scheduler.step(accuracy_vl)
 
-        if len(args.checkpoint) > 1:
-            torch.save(model, args.checkpoint)
+        lr = next(iter(scheduler.get_state().values()))["optimizer"][
+            "param_groups"
+        ][0]["lr"]
 
-    print("ACCURACY: %.6f" % accuracy_vl, flush=True)
+        if lr <= 1e-6:
+            break
+            
+    y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+        "_RETURN"
+    ].mean(0)
+    y = g.ndata["label"][g.ndata["test_mask"]]
+    accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+        y_hat
+    )
+
+    if len(args.checkpoint) > 1:
+        torch.save(model, args.checkpoint)
+
+    print("ACCURACY,%.6f,%.6f" % (accuracy_vl, accuracy_te), flush=True)
     return accuracy_vl
 
 if __name__ == "__main__":
@@ -155,7 +176,7 @@ if __name__ == "__main__":
     parser.add_argument("--t", type=float, default=5.0)
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--kl_scale", type=float, default=1e-5)
-    parser.add_argument("--n_epochs", type=int, default=50)
+    parser.add_argument("--n_epochs", type=int, default=200)
     parser.add_argument("--adjoint", type=int, default=0)
     parser.add_argument("--physique", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=1.0)
@@ -165,6 +186,8 @@ if __name__ == "__main__":
     parser.add_argument("--norm", type=int, default=0)
     parser.add_argument("--subsample_size", type=int, default=100)
     parser.add_argument("--k", type=int, default=0)
+    parser.add_argument("--factor", type=float, default=0.1)
+    parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
     args = parser.parse_args()

@@ -37,9 +37,10 @@ def parse_output(output):
     line = output.split("\n")[-1]
     if "ACCURACY" not in line:
         print(output, flush=True)
-        return 0.0
-    return float(line.split(" ")[-1])
-
+        return 0.0, 0.0
+    _, accuracy_vl, accuracy_te = line.split(",")
+    return float(accuracy_vl), float(accuracy_te)
+    
 def multiply_by_heads(args):
     args["embedding_features"] = (
         args["embedding_features"] * args["num_heads"]
@@ -53,8 +54,8 @@ def objective(args):
     args["checkpoint"] = checkpoint
     command = args_to_command(args)
     output = lsf_submit(command)
-    accuracy = parse_output(output)
-    session.report({"accuracy": accuracy})
+    accuracy, accuracy_te = parse_output(output)
+    session.report({"accuracy": accuracy, "accuracy_te": accuracy_te})
 
 def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
@@ -74,11 +75,10 @@ def experiment(args):
         "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 0,
         "physique": 0,
-        "norm": tune.choice([0, 1]),
+        "norm": 1,
         "gamma": tune.uniform(0.0, 1.0),
         "readout_depth": 1,
         "kl_scale": tune.loguniform(1e-5, 1e-2),
-        "n_epochs": tune.randint(50, 200),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
         "seed": 2666,
