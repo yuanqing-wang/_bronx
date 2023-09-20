@@ -30,11 +30,11 @@ class BronxModel(pyro.nn.PyroModule):
             embedding_features = hidden_features
 
         self.fc_in = torch.nn.Sequential(
-            torch.nn.Dropout(dropout_in),
+            # torch.nn.Dropout(dropout_in),
             torch.nn.Linear(in_features, hidden_features, bias=False),
         )
 
-        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
+        # self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
 
         fc_out = []
         for idx in range(readout_depth-1):
@@ -70,6 +70,7 @@ class BronxModel(pyro.nn.PyroModule):
                 physique=physique,
                 gamma=gamma,
                 norm=norm,
+                dropout=dropout_in,
             )
             
             if idx > 0:
@@ -82,22 +83,21 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        self.dropout_in = torch.nn.Dropout(dropout_in)
-        self.dropout_out = torch.nn.Dropout(dropout_out)
-
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)        
+        h0 = h
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}").guide(g, h)
+            h = getattr(self, f"layer{idx}").guide(g, h, h0=h0)
         h = self.fc_out(h)
         return h
 
     def forward(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)
+        h0 = h
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h)
+            h = getattr(self, f"layer{idx}")(g, h, h0=h0)
         h = self.fc_out(h)
         return h
 

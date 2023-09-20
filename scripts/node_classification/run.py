@@ -139,10 +139,19 @@ def run(args):
             y_hat
         )
 
+        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+            "_RETURN"
+        ].mean(0)
+        y = g.ndata["label"][g.ndata["test_mask"]]
+        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+            y_hat
+        )
+
+
         if len(args.checkpoint) > 1:
             torch.save(model, args.checkpoint)
 
-    print("ACCURACY: %.6f" % accuracy_vl, flush=True)
+    print("ACCURACY,%.6f,%.6f" % (accuracy_vl, accuracy_te), flush=True)
     return accuracy_vl
 
 if __name__ == "__main__":
@@ -155,8 +164,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--depth", type=int, default=1)
-    parser.add_argument("--num_samples", type=int, default=64)
-    parser.add_argument("--num_particles", type=int, default=32)
+    parser.add_argument("--num_samples", type=int, default=4)
+    parser.add_argument("--num_particles", type=int, default=4)
     parser.add_argument("--num_heads", type=int, default=5)
     parser.add_argument("--sigma_factor", type=float, default=10.0)
     parser.add_argument("--t", type=float, default=5.0)

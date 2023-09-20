@@ -34,7 +34,10 @@ class ODEFunc(torch.nn.Module):
         h = g.ndata["h"]
         h = h - h0 * self.gamma
         if self.h0 is not None:
-            h = h + self.h0
+            h0 = self.h0
+            if h.dim() == 4:
+                h0 = h0.unsqueeze(-3)
+            h = h + h0
         h, e = h.flatten(), e.flatten()
         x = torch.cat([h, torch.zeros_like(e)])
         return x
@@ -49,8 +52,9 @@ class LinearDiffusion(torch.nn.Module):
             self.integrator = odeint_adjoint
         else:
             self.integrator = odeint
+        
 
-    def forward(self, g, h, e):
+    def forward(self, g, h, e, h0=None):
         g = g.local_var()
 
         parallel = e.dim() == 4
@@ -66,7 +70,8 @@ class LinearDiffusion(torch.nn.Module):
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
         if self.physique is not None:
-            self.odefunc.h0 = h.clone().detach()
+            h0 = h0.reshape(*h0.shape[:-1], e.shape[-2], -1)
+            self.odefunc.h0 = h0.detach()
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
@@ -95,6 +100,7 @@ class BronxLayer(pyro.nn.PyroModule):
             physique=False,
             gamma=1.0,
             norm=False,
+            dropout=0.0,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -110,7 +116,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
         self.activation = activation
         self.idx = idx
-        self.norm = norm
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
@@ -120,12 +125,18 @@ class BronxLayer(pyro.nn.PyroModule):
             t, adjoint=adjoint, physique=physique, gamma=gamma,
         )
 
-    def guide(self, g, h):
+        if norm:
+            self.norm = torch.nn.LayerNorm(in_features)
+        else:
+            self.norm = None
+
+        self.dropout = torch.nn.Dropout(dropout)
+
+    def guide(self, g, h, h0=None):
         g = g.local_var()
-        h0 = h
         if self.norm:
-            h = h - h.mean(-1, keepdims=True)
-            h = torch.nn.functional.normalize(h, dim=-1)
+            h = self.norm(h)
+        h = self.dropout(h)
         mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
 
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
@@ -167,11 +178,14 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h0, e)
+        h = self.linear_diffusion(g, h, e, h0=h0)
         return h
 
-    def forward(self, g, h):
+    def forward(self, g, h, h0=None):
         g = g.local_var()
+        if self.norm:
+            h = self.norm(h)
+        h = self.dropout(h)
         mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
         src, dst = g.edges()
         mu = mu[..., dst, :]
@@ -192,7 +206,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h, e)
+        h = self.linear_diffusion(g, h, e, h0=h0)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
