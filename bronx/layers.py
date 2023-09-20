@@ -302,6 +302,10 @@ class BatchedLSTM(torch.nn.LSTM):
             h = h.squeeze(0)
             return h
 
+class ConsistencyRegularizer(torch.nn.Module):
+    def forward(self, h):
+        pass
+
 
 
 
