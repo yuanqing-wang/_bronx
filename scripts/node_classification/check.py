@@ -19,13 +19,15 @@ def check(args):
             pass
 
     results = sorted(results, key=lambda x: x["_metric"]["accuracy"], reverse=True)
-    df = pd.DataFrame([result["config"] for result in results])
-    df["accuracy"] = [result["_metric"]["accuracy"] for result in results]
-    df["accuracy_te"] = [result["_metric"]["accuracy_te"] for result in results]
-    df.to_csv(args.report)
 
     print(results[0]["_metric"]["accuracy"], results[0]["_metric"]["accuracy_te"])
     print(results[0]["config"], flush=True)
+
+    if len(args.report) > 1:
+        df = pd.DataFrame([result["config"] for result in results])
+        df["accuracy"] = [result["_metric"]["accuracy"] for result in results]
+        df["accuracy_te"] = [result["_metric"]["accuracy_te"] for result in results]
+        df.to_csv(args.report)
 
     from run import get_graph
     g = get_graph(results[0]["config"]["data"])
@@ -74,7 +76,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", type=str, default=".")
-    parser.add_argument("--report", type=str, default="results.csv")
+    parser.add_argument("--report", type=str, default="")
     parser.add_argument("--rerun", type=int, default=0)
     args = parser.parse_args()
     check(args)
