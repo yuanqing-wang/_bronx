@@ -34,10 +34,7 @@ class ODEFunc(torch.nn.Module):
         h = g.ndata["h"]
         h = h - h0 * self.gamma
         if self.h0 is not None:
-            h0 = self.h0
-            if h.dim() == 4:
-                h0 = h0.unsqueeze(-3)
-            h = h + h0
+            h = h + self.h0
         h, e = h.flatten(), e.flatten()
         x = torch.cat([h, torch.zeros_like(e)])
         return x
@@ -54,7 +51,7 @@ class LinearDiffusion(torch.nn.Module):
             self.integrator = odeint
         
 
-    def forward(self, g, h, e, h0=None):
+    def forward(self, g, h, e):
         g = g.local_var()
 
         parallel = e.dim() == 4
@@ -69,9 +66,8 @@ class LinearDiffusion(torch.nn.Module):
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
-        if self.physique is not None:
-            h0 = h0.reshape(*h0.shape[:-1], e.shape[-2], -1)
-            self.odefunc.h0 = h0.detach()
+        if self.physique:
+            self.odefunc.h0 = h
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
@@ -132,7 +128,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
         self.dropout = torch.nn.Dropout(dropout)
 
-    def guide(self, g, h, h0=None):
+    def guide(self, g, h):
         g = g.local_var()
         if self.norm:
             h = self.norm(h)
@@ -178,10 +174,10 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h, e, h0=h0)
+        h = self.linear_diffusion(g, h, e)
         return h
 
-    def forward(self, g, h, h0=None):
+    def forward(self, g, h):
         g = g.local_var()
         if self.norm:
             h = self.norm(h)
@@ -206,7 +202,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h, e, h0=h0)
+        h = self.linear_diffusion(g, h, e)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):

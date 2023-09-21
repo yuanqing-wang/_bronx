@@ -75,7 +75,7 @@ def experiment(args):
         "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
         "physique": 1,
-        "norm": 0, # tune.choice([0, 1]),
+        "norm": 1, # tune.choice([0, 1]),
         "gamma": tune.uniform(0.0, 1.0),
         "readout_depth": tune.randint(1, 4),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
