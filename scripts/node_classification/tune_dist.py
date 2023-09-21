@@ -75,12 +75,16 @@ def experiment(args):
         "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
         "physique": 1,
-        "norm": 0, # tune.choice([0, 1]),
+        "norm": 1, # tune.choice([0, 1]),
         "gamma": tune.uniform(0.0, 1.0),
         "readout_depth": tune.randint(1, 4),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
+        "swa_start": tune.randint(10, 20),
+        "swa_lr": tune.loguniform(1e-5, 1e-2),
+        "swa_freq": tune.randint(5, 10),
+        "n_epochs": tune.randint(50, 100),
         "seed": 2666,
     }
 
