@@ -85,6 +85,8 @@ def run(args):
         gamma=args.gamma,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
+        consistency_temperature=args.consistency_temperature,
+        consistency_factor=args.consistency_factor,
         norm=bool(args.norm),
     )
  
@@ -181,6 +183,8 @@ if __name__ == "__main__":
     parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
+    parser.add_argument("--consistency_temperature", type=float, default=1.0)
+    parser.add_argument("--consistency_factor", type=float, default=1.0)
     parser.add_argument("--norm", type=int, default=0)
     parser.add_argument("--subsample_size", type=int, default=100)
     parser.add_argument("--k", type=int, default=0)

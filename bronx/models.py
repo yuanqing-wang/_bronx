@@ -3,7 +3,7 @@ import torch
 import dgl
 import pyro
 from pyro import poutine
-from .layers import BronxLayer, NodeRecover, EdgeRecover, NeighborhoodRecover
+from .layers import BronxLayer, NodeRecover, EdgeRecover, NeighborhoodRecover, ConsistencyRegularizer
 from dgl.nn.pytorch import GraphConv
 
 class BronxModel(pyro.nn.PyroModule):
@@ -103,10 +103,17 @@ class BronxModel(pyro.nn.PyroModule):
 
 class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
+        temperature = kwargs.pop("consistency_temperature", 1.0)
+        factor = kwargs.pop("consistency_factor", 1.0)
         super().__init__(*args, **kwargs)
-
+        self.consistency_regularizer = ConsistencyRegularizer(
+            temperature=temperature, factor=factor,
+        )
+        
     def forward(self, g, h, y=None, mask=None):
         h = super().forward(g, h, )
+        self.consistency_regularizer(h)
+
         # h = h.softmax(-1)
         if mask is not None:
             h = h[..., mask, :]

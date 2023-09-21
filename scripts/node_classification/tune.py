@@ -45,6 +45,8 @@ def experiment(args):
         "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": tune.choice([0, 1]),
         "physique": tune.choice([0, 1]),
+        "consistency_factor": tune.loguniform(1e-5, 1e-1),
+        "consistency_temperature": tune.uniform(0.0, 1.0),
         "kl_scale": tune.loguniform(1e-10, 1e-2),
         "n_epochs": tune.choice([50]),
         "gamma": tune.uniform(0.0, 1.0),
