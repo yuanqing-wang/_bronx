@@ -86,18 +86,16 @@ class BronxModel(pyro.nn.PyroModule):
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)        
-        h0 = h
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}").guide(g, h, h0=h0)
+            h = getattr(self, f"layer{idx}").guide(g, h)
         h = self.fc_out(h)
         return h
 
     def forward(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)
-        h0 = h
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h, h0=h0)
+            h = getattr(self, f"layer{idx}")(g, h)
         h = self.fc_out(h)
         return h
 
