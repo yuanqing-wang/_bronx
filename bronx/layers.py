@@ -85,6 +85,7 @@ class BronxLayer(pyro.nn.PyroModule):
             self, 
             in_features, 
             out_features, 
+            edge_features=0,
             activation=torch.nn.SiLU(), 
             idx=0, 
             num_heads=4,
@@ -120,7 +121,14 @@ class BronxLayer(pyro.nn.PyroModule):
             t, adjoint=adjoint, physique=physique, gamma=gamma,
         )
 
-    def guide(self, g, h):
+        self.edge_features = edge_features
+        if self.edge_features > 0:
+            self.fc_mu_e = torch.nn.Linear(edge_features, out_features, bias=False)
+            self.fc_log_sigma_e = torch.nn.Linear(edge_features, out_features, bias=False)
+            torch.nn.init.constant_(self.fc_mu_e.weight, 1e-5)
+            torch.nn.init.constant_(self.fc_log_sigma_e.weight, 1e-5)
+
+    def guide(self, g, h, he=None):
         g = g.local_var()
         h0 = h
         if self.norm:
@@ -145,32 +153,42 @@ class BronxLayer(pyro.nn.PyroModule):
             dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
         )
 
+        if self.edge_features > 0:
+            mu_e = self.fc_mu_e(he)
+            log_sigma_e = self.fc_log_sigma_e(he)
+            mu_e = mu_e.reshape(*mu_e.shape[:-1], self.num_heads, -1)
+            log_sigma_e = log_sigma_e.reshape(
+                *log_sigma_e.shape[:-1], self.num_heads, -1
+            )
+            g.edata["mu"] = g.edata["mu"] + mu_e
+            g.edata["log_sigma"] = g.edata["log_sigma"] + log_sigma_e
+
         mu = g.edata["mu"]
         log_sigma = g.edata["log_sigma"] 
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
+        if g.number_of_edges() > 0:
+            with pyro.plate(
+                f"edges{self.idx}", g.number_of_edges(), device=g.device
+            ):
+                with pyro.poutine.scale(None, self.kl_scale):
+                    e = pyro.sample(
+                        f"e{self.idx}",
+                        pyro.distributions.TransformedDistribution(
+                            pyro.distributions.Normal(
+                                mu,
+                                self.sigma_factor * log_sigma.exp(),
+                            ),
+                            pyro.distributions.transforms.SigmoidTransform(),
+                        ).to_event(2),
+                    )
 
-        with pyro.plate(
-            f"edges{self.idx}", g.number_of_edges(), device=g.device
-        ):
-            with pyro.poutine.scale(None, self.kl_scale):
-                e = pyro.sample(
-                    f"e{self.idx}",
-                    pyro.distributions.TransformedDistribution(
-                        pyro.distributions.Normal(
-                            mu,
-                            self.sigma_factor * log_sigma.exp(),
-                        ),
-                        pyro.distributions.transforms.SigmoidTransform(),
-                    ).to_event(2),
-                )
-
-        h = self.linear_diffusion(g, h0, e)
+            h = self.linear_diffusion(g, h0, e)
         return h
 
-    def forward(self, g, h):
+    def forward(self, g, h, he=None):
         g = g.local_var()
         mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
         src, dst = g.edges()
@@ -178,21 +196,22 @@ class BronxLayer(pyro.nn.PyroModule):
         log_sigma = log_sigma[..., dst, :]
         mu, log_sigma = mu.unsqueeze(-1), log_sigma.unsqueeze(-1)
         sigma = log_sigma.exp() * self.sigma_factor
-        with pyro.plate(
-            f"edges{self.idx}", g.number_of_edges(), device=g.device
-        ):
-            with pyro.poutine.scale(None, self.kl_scale):
-                e = pyro.sample(
-                    f"e{self.idx}",
-                    pyro.distributions.TransformedDistribution(
-                        pyro.distributions.Normal(
-                            mu, sigma,
-                        ),
-                        pyro.distributions.transforms.SigmoidTransform(),
-                    ).to_event(2),
-                )
+        if g.number_of_edges() > 0:
+            with pyro.plate(
+                f"edges{self.idx}", g.number_of_edges(), device=g.device
+            ):
+                with pyro.poutine.scale(None, self.kl_scale):
+                    e = pyro.sample(
+                        f"e{self.idx}",
+                        pyro.distributions.TransformedDistribution(
+                            pyro.distributions.Normal(
+                                mu, sigma,
+                            ),
+                            pyro.distributions.transforms.SigmoidTransform(),
+                        ).to_event(2),
+                    )
 
-        h = self.linear_diffusion(g, h, e)
+            h = self.linear_diffusion(g, h, e)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
