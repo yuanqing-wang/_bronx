@@ -4,8 +4,7 @@ from run import run
 import ray
 from ray import tune, air, train
 from ray.tune.trainable import session
-from ray.tune.search.ax import AxSearch
-from ray.tune.schedulers import ASHAScheduler
+from ray.tune.search.optuna import OptunaSearch
 import os
 
 if "head_node" in os.environ:
@@ -25,47 +24,57 @@ def multiply_by_heads(args):
 def objective(args):
     args = multiply_by_heads(args)
     args = SimpleNamespace(**args)
-    run(args)
+    accuracy_vl, accuracy_te = run(args)
+    session.report({"accuracy": accuracy_vl, "accuracy_te": accuracy_te})
 
 def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
     param_space = {
-        "data": tune.choice([args.data]),
-        "hidden_features": tune.randint(4, 16),
-        "embedding_features": tune.randint(4, 16),
-        "num_heads": tune.randint(4, 16),
-        "depth": tune.choice([1]),
+        "data": args.data,
+        "hidden_features": tune.randint(1, 8),
+        "embedding_features": tune.randint(2, 8),
+        "num_heads": tune.randint(4, 32),
+        "depth": 1, # tune.randint(1, 4),
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
-        "num_samples": tune.choice([8]),
-        "num_particles": tune.choice([8]),
-        "sigma_factor": tune.uniform(0.5, 10.0),
-        "t": tune.uniform(0.5, 10.0),
-        "optimizer": tune.choice(["RMSprop", "Adam", "AdamW"]),
-        "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
-        "adjoint": tune.choice([0, 1]),
-        "physique": tune.choice([0, 1]),
-        "consistency_factor": tune.loguniform(1e-5, 1e-1),
+        "num_samples": 4,
+        "num_particles": 4,
+        "sigma_factor": tune.uniform(1.0, 15.0),
+        "t": tune.uniform(1.0, 15.0),
+        "optimizer": "Adam", # tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
+        "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
+        "adjoint": 1, # tune.choice([0, 1]),
+        "physique": 1,
+        "norm": 0, # tune.choice([0, 1]),
+        "gamma": 1.0, # tune.uniform(0.0, 1.0),
+        "readout_depth": 1, # tune.randint(1, 4),
+        "kl_scale": tune.loguniform(1e-5, 1e-2),
+        "dropout_in": tune.uniform(0.0, 1.0),
+        "dropout_out": tune.uniform(0.0, 1.0),
+        "consistency_factor": tune.loguniform(1e-2, 1.0),
         "consistency_temperature": tune.uniform(0.0, 1.0),
-        "kl_scale": tune.loguniform(1e-10, 1e-2),
-        "n_epochs": tune.choice([50]),
-        "gamma": tune.uniform(0.0, 1.0),
-        "readout_depth": tune.randint(1, 3),
-        "test": tune.choice([0]),
+        "n_epochs": 50,
+        "swa_lr": tune.loguniform(1e-5, 1e-1),
+        "node_prior": 1, # tune.choice([0, 1]),
+        "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
+        "seed": 2666,
+        "split_index": 0,
+        "k": 0,
+        "patience": 10,
+        "checkpoint": "",
     }
 
     tune_config = tune.TuneConfig(
-        metric="accuracy",
+        metric="_metric/accuracy",
         mode="max",
-        search_alg=AxSearch(),
-        num_samples=1000,
+        search_alg=OptunaSearch(),
+        num_samples=10000,
     )
 
     run_config = air.RunConfig(
-        name=args.data,
+        name=name,
         storage_path=args.data,
-        stop={"time_total_s": 200, "training_iteration": 50},
-        checkpoint_config=air.CheckpointConfig(checkpoint_frequency=1),
+        verbose=0,
     )
 
     tuner = tune.Tuner(
@@ -80,6 +89,6 @@ def experiment(args):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, default="CoraGraphDataset")
+    parser.add_argument("--data", type=str, default="CornellDataset")
     args = parser.parse_args()
     experiment(args)
