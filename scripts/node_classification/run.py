@@ -88,6 +88,8 @@ def run(args):
         consistency_temperature=args.consistency_temperature,
         consistency_factor=args.consistency_factor,
         norm=bool(args.norm),
+        node_prior=bool(args.node_prior),
+        edge_recover=args.edge_recover,
     )
  
     if torch.cuda.is_available():
@@ -121,6 +123,7 @@ def run(args):
         loss = svi.step(
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
+        print(loss)
 
     model.eval()
     swap_swa_sgd(svi.optim)
@@ -160,35 +163,36 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--hidden_features", type=int, default=25)
-    parser.add_argument("--embedding_features", type=int, default=20)
-    parser.add_argument("--activation", type=str, default="SiLU")
-    parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--hidden_features", type=int, default=64)
+    parser.add_argument("--embedding_features", type=int, default=64)
+    parser.add_argument("--activation", type=str, default="ELU")
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--num_samples", type=int, default=4)
     parser.add_argument("--num_particles", type=int, default=4)
-    parser.add_argument("--num_heads", type=int, default=5)
-    parser.add_argument("--sigma_factor", type=float, default=10.0)
-    parser.add_argument("--t", type=float, default=5.0)
-    parser.add_argument("--optimizer", type=str, default="AdamW")
-    parser.add_argument("--kl_scale", type=float, default=1e-5)
+    parser.add_argument("--num_heads", type=int, default=16)
+    parser.add_argument("--sigma_factor", type=float, default=5.0)
+    parser.add_argument("--t", type=float, default=10.0)
+    parser.add_argument("--optimizer", type=str, default="Adam")
+    parser.add_argument("--kl_scale", type=float, default=1e-4)
     parser.add_argument("--n_epochs", type=int, default=50)
-    parser.add_argument("--adjoint", type=int, default=0)
-    parser.add_argument("--physique", type=int, default=0)
+    parser.add_argument("--adjoint", type=int, default=1)
+    parser.add_argument("--physique", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
     parser.add_argument("--swa_start", type=int, default=20)
     parser.add_argument("--swa_freq", type=int, default=10)
     parser.add_argument("--swa_lr", type=float, default=1e-2)
-    parser.add_argument("--dropout_in", type=float, default=0.0)
-    parser.add_argument("--dropout_out", type=float, default=0.0)
-    parser.add_argument("--consistency_temperature", type=float, default=1.0)
-    parser.add_argument("--consistency_factor", type=float, default=1.0)
+    parser.add_argument("--dropout_in", type=float, default=0.5)
+    parser.add_argument("--dropout_out", type=float, default=0.5)
+    parser.add_argument("--consistency_temperature", type=float, default=0.5)
+    parser.add_argument("--consistency_factor", type=float, default=1e-1)
+    parser.add_argument("--node_prior", type=int, default=0)
     parser.add_argument("--norm", type=int, default=0)
-    parser.add_argument("--subsample_size", type=int, default=100)
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=-1)
+    parser.add_argument("--edge_recover", default=0.0, type=float)
     args = parser.parse_args()
     run(args)

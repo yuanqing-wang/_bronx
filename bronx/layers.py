@@ -32,12 +32,10 @@ class ODEFunc(torch.nn.Module):
         g.ndata["h"] = h
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
         h = g.ndata["h"]
+        # h = h.tanh()
         h = h - h0 * self.gamma
         if self.h0 is not None:
-            h0 = self.h0
-            if h.dim() == 4:
-                h0 = h0.unsqueeze(-3)
-            h = h + h0
+            h = h + self.h0
         h, e = h.flatten(), e.flatten()
         x = torch.cat([h, torch.zeros_like(e)])
         return x
@@ -54,7 +52,7 @@ class LinearDiffusion(torch.nn.Module):
             self.integrator = odeint
         
 
-    def forward(self, g, h, e, h0=None):
+    def forward(self, g, h, e):
         g = g.local_var()
 
         parallel = e.dim() == 4
@@ -69,9 +67,8 @@ class LinearDiffusion(torch.nn.Module):
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
-        if self.physique is not None:
-            h0 = h0.reshape(*h0.shape[:-1], e.shape[-2], -1)
-            self.odefunc.h0 = h0.detach()
+        if self.physique:
+            self.odefunc.h0 = h.detach().clone()
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
@@ -101,14 +98,17 @@ class BronxLayer(pyro.nn.PyroModule):
             gamma=1.0,
             norm=False,
             dropout=0.0,
+            node_prior=False,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
 
-        self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
-        self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+        if node_prior:
+            self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+            self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+        self.node_prior = node_prior
 
         torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
@@ -132,7 +132,7 @@ class BronxLayer(pyro.nn.PyroModule):
 
         self.dropout = torch.nn.Dropout(dropout)
 
-    def guide(self, g, h, h0=None):
+    def guide(self, g, h):
         g = g.local_var()
         if self.norm:
             h = self.norm(h)
@@ -177,21 +177,38 @@ class BronxLayer(pyro.nn.PyroModule):
                         pyro.distributions.transforms.SigmoidTransform(),
                     ).to_event(2),
                 )
-
-        h = self.linear_diffusion(g, h, e, h0=h0)
+        h = self.linear_diffusion(g, h, e)
         return h
 
-    def forward(self, g, h, h0=None):
+    def forward(self, g, h):
         g = g.local_var()
-        if self.norm:
-            h = self.norm(h)
-        h = self.dropout(h)
-        mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
-        src, dst = g.edges()
-        mu = mu[..., dst, :]
-        log_sigma = log_sigma[..., dst, :]
-        mu, log_sigma = mu.unsqueeze(-1), log_sigma.unsqueeze(-1)
-        sigma = log_sigma.exp() * self.sigma_factor
+
+        if self.node_prior:
+            if self.norm:
+                h = self.norm(h)
+            h = self.dropout(h)
+            mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
+            src, dst = g.edges()
+            mu = mu[..., dst, :]
+            log_sigma = log_sigma[..., dst, :]
+            mu, log_sigma = mu.unsqueeze(-1), log_sigma.unsqueeze(-1)
+            sigma = log_sigma.exp() * self.sigma_factor
+
+        else:
+            mu = torch.zeros(
+                g.number_of_edges(),
+                self.num_heads,
+                1,
+                device=g.device,
+            )
+
+            sigma = self.sigma_factor * torch.ones(
+                g.number_of_edges(),
+                self.num_heads,
+                1,
+                device=g.device,
+            )
+
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
         ):
@@ -206,7 +223,7 @@ class BronxLayer(pyro.nn.PyroModule):
                     ).to_event(2),
                 )
 
-        h = self.linear_diffusion(g, h, e, h0=h0)
+        h = self.linear_diffusion(g, h, e)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
@@ -308,15 +325,15 @@ class ConsistencyRegularizer(torch.nn.Module):
         self.temperature = temperature
         self.factor = factor
 
-    def forward(self, logits):
-        probs = logits.softmax(-1)
+    def forward(self, probs):
         if probs.dim() == 2:
             avg_probs = probs
         else:
             avg_probs = probs.mean(0)
+
         sharpened_probs = avg_probs.pow(1.0 / self.temperature)
         sharpened_probs = sharpened_probs / sharpened_probs.sum(-1, keepdims=True)
-        loss = (sharpened_probs - avg_probs).pow(2).sum()
+        loss = (sharpened_probs - probs).pow(2).sum()
         pyro.factor("consistency_regularizer", -loss * self.factor)
         return loss
 

@@ -24,6 +24,8 @@ class BronxModel(pyro.nn.PyroModule):
             dropout_in=0.0,
             dropout_out=0.0,
             norm=False,
+            node_prior=False,
+            edge_recover=0.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -56,6 +58,13 @@ class BronxModel(pyro.nn.PyroModule):
         self.activation = activation
         self.depth = depth
 
+        if edge_recover > 0:
+            self.edge_recover = EdgeRecover(
+                hidden_features, hidden_features, scale=edge_recover,
+            )
+        else:
+            self.edge_recover = None
+
         for idx in range(depth):
             layer = BronxLayer(
                 hidden_features,
@@ -71,6 +80,7 @@ class BronxModel(pyro.nn.PyroModule):
                 gamma=gamma,
                 norm=norm,
                 dropout=dropout_in,
+                node_prior=node_prior,
             )
             
             if idx > 0:
@@ -86,18 +96,18 @@ class BronxModel(pyro.nn.PyroModule):
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)        
-        h0 = h
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}").guide(g, h, h0=h0)
+            h = getattr(self, f"layer{idx}").guide(g, h)
         h = self.fc_out(h)
         return h
 
     def forward(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)
-        h0 = h
         for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h, h0=h0)
+            h = getattr(self, f"layer{idx}")(g, h)
+        if self.edge_recover is not None:
+            self.edge_recover(g, h)
         h = self.fc_out(h)
         return h
 
@@ -112,9 +122,9 @@ class NodeClassificationBronxModel(BronxModel):
         
     def forward(self, g, h, y=None, mask=None):
         h = super().forward(g, h, )
+        h = h.softmax(-1)
         self.consistency_regularizer(h)
 
-        # h = h.softmax(-1)
         if mask is not None:
             h = h[..., mask, :]
             if y is not None:
@@ -127,7 +137,7 @@ class NodeClassificationBronxModel(BronxModel):
             ):
                 pyro.sample(
                     "y",
-                    pyro.distributions.OneHotCategorical(logits=h),
+                    pyro.distributions.OneHotCategorical(probs=h),
                     obs=y,
                 )
 
