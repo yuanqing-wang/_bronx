@@ -62,7 +62,7 @@ class LinearDiffusion(torch.nn.Module):
             e, h = e.swapaxes(0, 1), h.swapaxes(0, 1)
 
         h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
-        e = edge_softmax(g, e)
+        # e = edge_softmax(g, e)
         g.edata["e"] = e
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
@@ -169,13 +169,13 @@ class BronxLayer(pyro.nn.PyroModule):
             with pyro.poutine.scale(None, self.kl_scale):
                 e = pyro.sample(
                     f"e{self.idx}",
-                    # pyro.distributions.TransformedDistribution(
+                    pyro.distributions.TransformedDistribution(
                         pyro.distributions.Normal(
                             mu,
                             self.sigma_factor * log_sigma.exp(),
-                        ).to_event(2),
-                        # pyro.distributions.transforms.SigmoidTransform(),
-                    # ).to_event(2),
+                        ),
+                        pyro.distributions.transforms.SigmoidTransform(),
+                    ).to_event(2),
                 )
         h = self.linear_diffusion(g, h, e)
         return h
@@ -215,12 +215,12 @@ class BronxLayer(pyro.nn.PyroModule):
             with pyro.poutine.scale(None, self.kl_scale):
                 e = pyro.sample(
                     f"e{self.idx}",
-                    # pyro.distributions.TransformedDistribution(
+                    pyro.distributions.TransformedDistribution(
                         pyro.distributions.Normal(
                             mu, sigma,
-                        ).to_event(2),
-                        # pyro.distributions.transforms.SigmoidTransform(),
-                    # ).to_event(2),
+                        ),
+                        pyro.distributions.transforms.SigmoidTransform(),
+                    ).to_event(2),
                 )
 
         h = self.linear_diffusion(g, h, e)
