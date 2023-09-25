@@ -216,3 +216,45 @@ class GraphRegressionBronxModel(BronxModel):
         return mu
 
         
+class GraphClassificationBronxModel(BronxModel):
+    def __init__(self, *args, **kwargs):
+        out_features = kwargs["out_features"]
+        kwargs["out_features"] = kwargs["hidden_features"]
+
+        super().__init__(*args, **kwargs)
+
+        self.fc = torch.nn.Sequential(
+            torch.nn.Linear(
+                kwargs["hidden_features"], kwargs["hidden_features"],
+            ),
+            self.activation,
+            torch.nn.Linear(
+                kwargs["hidden_features"], out_features,
+            ),
+        )
+
+    def forward(self, g, h, y=None):
+        g = g.local_var()
+        h = super().forward(g, h, )
+
+        parallel = h.dim() == 3
+        if parallel:
+            h = h.swapaxes(0, 1)
+            
+        g.ndata["h"] = h
+        h = dgl.sum_nodes(g, "h")
+
+        if parallel:
+            h = h.swapaxes(0, 1)
+
+        h = self.fc(h).sigmoid()
+
+        # if y is not None:
+        with pyro.plate("data", g.batch_size, device=h.device):
+            pyro.sample(
+                "y",
+                pyro.distributions.Bernoulli(h).to_event(1),
+                obs=y,
+            )
+        
+        return h
