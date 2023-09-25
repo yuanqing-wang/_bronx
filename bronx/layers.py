@@ -15,13 +15,19 @@ from torchdiffeq import odeint_adjoint
 from torchdiffeq import odeint
 
 class ODEFunc(torch.nn.Module):
-    def __init__(self, gamma):
+    def __init__(
+            self, hidden_features, gamma, aggregators=["sum", "max"]
+        ):
         super().__init__()
         self.g = None
         self.edge_shape = None
         self.node_shape = None
         self.h0 = None
         self.register_buffer("gamma", torch.tensor(gamma))
+        self.fc = torch.nn.Linear(
+            len(aggregators) * hidden_features, hidden_features, bias=False
+        )
+        self.aggregators = aggregators
         
     def forward(self, t, x):
         h, e = x[:self.node_shape.numel()], x[self.node_shape.numel():]
@@ -30,9 +36,18 @@ class ODEFunc(torch.nn.Module):
         g = self.g.local_var()
         g.edata["e"] = e
         g.ndata["h"] = h
-        g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
-        h = g.ndata["h"]
-        # h = h.tanh()
+        for aggregator in self.aggregators:
+            g.update_all(
+                fn.u_mul_e("h", "e", "m"), 
+                getattr(fn, aggregator)("m", "h" + aggregator)
+            )
+        
+        h = torch.cat(
+            [g.ndata["h" + aggregator] for aggregator in self.aggregators], 
+            dim=-1,
+        )
+
+        h = self.fc(h).tanh()
         h = h - h0 * self.gamma
         if self.h0 is not None:
             h = h + self.h0
@@ -41,9 +56,9 @@ class ODEFunc(torch.nn.Module):
         return x
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, t, adjoint=False, physique=False, gamma=1.0):
+    def __init__(self, t, hidden_features, adjoint=False, physique=False, gamma=1.0):
         super().__init__()
-        self.odefunc = ODEFunc(gamma=gamma)
+        self.odefunc = ODEFunc(hidden_features=hidden_features, gamma=gamma)
         self.register_buffer("t", torch.tensor(t))
         self.physique = physique
         if adjoint:
@@ -122,7 +137,8 @@ class BronxLayer(pyro.nn.PyroModule):
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
         self.linear_diffusion = LinearDiffusion(
-            t, adjoint=adjoint, physique=physique, gamma=gamma,
+            t=t, hidden_features=in_features // num_heads,
+            adjoint=adjoint, physique=physique, gamma=gamma,
         )
 
         if norm:
