@@ -90,6 +90,7 @@ def experiment(args):
         "node_prior": 1, # tune.choice([0, 1]),
         "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
         "seed": 2666,
+        "k": 0,
     }
 
     tune_config = tune.TuneConfig(
