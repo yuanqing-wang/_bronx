@@ -20,10 +20,12 @@ def get_graph(data):
         CoauthorPhysicsDataset,
         AmazonCoBuyComputerDataset,
         AmazonCoBuyPhotoDataset,
+        CornellDataset,
     )
 
     g = locals()[data](verbose=False)[0]
     g = dgl.remove_self_loop(g)
+    # g = dgl.add_reverse_edges(g)
     # g = dgl.add_self_loop(g)
     # src, dst = g.edges()
     # eids = torch.where(src > dst)[0]
@@ -64,6 +66,11 @@ def run(args):
 
     g = get_graph(args.data)
 
+    if args.split_index >= 0:
+        g.ndata["train_mask"] = g.ndata["train_mask"][:, args.split_index]
+        g.ndata["val_mask"] = g.ndata["val_mask"][:, args.split_index]
+        g.ndata["test_mask"] = g.ndata["test_mask"][:, args.split_index]
+
     if args.k > 0:
         h_pe = dgl.random_walk_pe(g, k=args.k)
         g.ndata["feat"] = torch.cat([g.ndata["feat"], h_pe], dim=-1)
@@ -85,7 +92,11 @@ def run(args):
         gamma=args.gamma,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
+        consistency_temperature=args.consistency_temperature,
+        consistency_factor=args.consistency_factor,
         norm=bool(args.norm),
+        node_prior=bool(args.node_prior),
+        edge_recover=args.edge_recover,
     )
  
     if torch.cuda.is_available():
@@ -104,7 +115,7 @@ def run(args):
             },
         }
     )
-
+    
     svi = pyro.infer.SVI(
         model,
         model.guide,
@@ -113,15 +124,15 @@ def run(args):
             num_particles=args.num_particles, vectorize_particles=True
         ),
     )
-
+    
     for idx in range(args.n_epochs):
         model.train()
         loss = svi.step(
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    model.eval()
     swap_swa_sgd(svi.optim)
+    model.eval()
     with torch.no_grad():
         predictive = pyro.infer.Predictive(
             model,
@@ -139,43 +150,53 @@ def run(args):
             y_hat
         )
 
-        if len(args.checkpoint) > 1:
-            torch.save(model, args.checkpoint)
+        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+            "_RETURN"
+        ].mean(0)
+        y = g.ndata["label"][g.ndata["test_mask"]]
+        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+            y_hat
+        )
 
-    print("ACCURACY: %.6f" % accuracy_vl, flush=True)
-    return accuracy_vl
+    print("ACCURACY,%.6f,%.6f" % (accuracy_vl, accuracy_te), flush=True)
+    return accuracy_vl, accuracy_te
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--hidden_features", type=int, default=25)
-    parser.add_argument("--embedding_features", type=int, default=20)
-    parser.add_argument("--activation", type=str, default="SiLU")
-    parser.add_argument("--learning_rate", type=float, default=1e-2)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--hidden_features", type=int, default=32)
+    parser.add_argument("--embedding_features", type=int, default=32)
+    parser.add_argument("--activation", type=str, default="ELU")
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--depth", type=int, default=1)
-    parser.add_argument("--num_samples", type=int, default=64)
-    parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--num_heads", type=int, default=5)
-    parser.add_argument("--sigma_factor", type=float, default=10.0)
+    parser.add_argument("--num_samples", type=int, default=8)
+    parser.add_argument("--num_particles", type=int, default=8)
+    parser.add_argument("--num_heads", type=int, default=4)
+    parser.add_argument("--sigma_factor", type=float, default=5.0)
     parser.add_argument("--t", type=float, default=5.0)
-    parser.add_argument("--optimizer", type=str, default="AdamW")
+    parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--kl_scale", type=float, default=1e-5)
     parser.add_argument("--n_epochs", type=int, default=50)
-    parser.add_argument("--adjoint", type=int, default=0)
-    parser.add_argument("--physique", type=int, default=0)
+    parser.add_argument("--adjoint", type=int, default=1)
+    parser.add_argument("--physique", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
-    parser.add_argument("--swa_start", type=int, default=20)
-    parser.add_argument("--swa_freq", type=int, default=10)
-    parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
+    parser.add_argument("--consistency_temperature", type=float, default=0.1)
+    parser.add_argument("--consistency_factor", type=float, default=1e-5)
+    parser.add_argument("--node_prior", type=int, default=0)
     parser.add_argument("--norm", type=int, default=0)
-    parser.add_argument("--subsample_size", type=int, default=100)
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
+    parser.add_argument("--swa_start", type=int, default=20)
+    parser.add_argument("--swa_freq", type=int, default=5)
+    parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=-1)
+    parser.add_argument("--patience", type=int, default=10)
+    parser.add_argument("--split_index", type=int, default=-1)
+    parser.add_argument("--edge_recover", default=0.0, type=float)
     args = parser.parse_args()
     run(args)

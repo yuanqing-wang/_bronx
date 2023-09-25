@@ -3,7 +3,7 @@ import torch
 import dgl
 import pyro
 from pyro import poutine
-from .layers import BronxLayer, NodeRecover, EdgeRecover, NeighborhoodRecover
+from .layers import BronxLayer, NodeRecover, EdgeRecover, NeighborhoodRecover, ConsistencyRegularizer
 from dgl.nn.pytorch import GraphConv
 
 class BronxModel(pyro.nn.PyroModule):
@@ -24,12 +24,19 @@ class BronxModel(pyro.nn.PyroModule):
             dropout_in=0.0,
             dropout_out=0.0,
             norm=False,
+            node_prior=False,
+            edge_recover=0.0,
         ):
         super().__init__()
         if embedding_features is None:
             embedding_features = hidden_features
-        self.fc_in = torch.nn.Linear(in_features, hidden_features, bias=False)
-        self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
+
+        self.fc_in = torch.nn.Sequential(
+            # torch.nn.Dropout(dropout_in),
+            torch.nn.Linear(in_features, hidden_features, bias=False),
+        )
+
+        # self.fc_out = torch.nn.Linear(hidden_features, out_features, bias=False)
 
         fc_out = []
         for idx in range(readout_depth-1):
@@ -38,6 +45,7 @@ class BronxModel(pyro.nn.PyroModule):
                 torch.nn.Linear(hidden_features, hidden_features, bias=False)
             )
         fc_out.append(activation)
+        fc_out.append(torch.nn.Dropout(dropout_out))
         fc_out.append(
             torch.nn.Linear(hidden_features, out_features, bias=False)
         )
@@ -49,6 +57,13 @@ class BronxModel(pyro.nn.PyroModule):
         )
         self.activation = activation
         self.depth = depth
+
+        if edge_recover > 0:
+            self.edge_recover = EdgeRecover(
+                hidden_features, hidden_features, scale=edge_recover,
+            )
+        else:
+            self.edge_recover = None
 
         for idx in range(depth):
             layer = BronxLayer(
@@ -64,6 +79,8 @@ class BronxModel(pyro.nn.PyroModule):
                 physique=physique,
                 gamma=gamma,
                 norm=norm,
+                dropout=dropout_in,
+                node_prior=node_prior,
             )
             
             if idx > 0:
@@ -76,35 +93,38 @@ class BronxModel(pyro.nn.PyroModule):
                 layer,
             )
 
-        self.dropout_in = torch.nn.Dropout(dropout_in)
-        self.dropout_out = torch.nn.Dropout(dropout_out)
-
     def guide(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)        
-        h = self.dropout_in(h)
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}").guide(g, h)
-        h = self.dropout_out(h)
+        h = self.fc_out(h)
         return h
 
     def forward(self, g, h, *args, **kwargs):
         g = g.local_var()
         h = self.fc_in(h)
-        h = self.dropout_in(h)
         for idx in range(self.depth):
             h = getattr(self, f"layer{idx}")(g, h)
-        h = self.dropout_out(h) 
+        if self.edge_recover is not None:
+            self.edge_recover(g, h)
         h = self.fc_out(h)
         return h
 
 class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
+        temperature = kwargs.pop("consistency_temperature", 1.0)
+        factor = kwargs.pop("consistency_factor", 1.0)
         super().__init__(*args, **kwargs)
-
+        self.consistency_regularizer = ConsistencyRegularizer(
+            temperature=temperature, factor=factor,
+        )
+        
     def forward(self, g, h, y=None, mask=None):
         h = super().forward(g, h, )
-        # h = h.softmax(-1)
+        h = h.softmax(-1)
+        self.consistency_regularizer(h)
+
         if mask is not None:
             h = h[..., mask, :]
             if y is not None:
@@ -117,7 +137,7 @@ class NodeClassificationBronxModel(BronxModel):
             ):
                 pyro.sample(
                     "y",
-                    pyro.distributions.OneHotCategorical(logits=h),
+                    pyro.distributions.OneHotCategorical(probs=h),
                     obs=y,
                 )
 
