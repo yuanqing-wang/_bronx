@@ -146,24 +146,46 @@ class NodeClassificationBronxModel(BronxModel):
 
 class GraphRegressionBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
+        out_features = kwargs["out_features"]
+        kwargs["out_features"] = kwargs["hidden_features"]
+
+        y_mean = kwargs.pop("y_mean", 0.0)
+        y_std = kwargs.pop("y_std", 1.0)
+
         super().__init__(*args, **kwargs)
-        self.fc_mu = torch.nn.Linear(
-            kwargs["hidden_features"], kwargs["out_features"], bias=False,
-        )
-        self.fc_log_sigma = torch.nn.Linear(
-            kwargs["hidden_features"], kwargs["out_features"], bias=False,
+        self.register_buffer("y_mean", torch.tensor(y_mean))
+        self.register_buffer("y_std", torch.tensor(y_std))
+
+        # self.fc_mu = torch.nn.Linear(
+        #     kwargs["hidden_features"], out_features, bias=False,
+        # )
+        # self.fc_log_sigma = torch.nn.Linear(
+        #     kwargs["hidden_features"], out_features, bias=False,
+        # )
+
+        self.fc_mu = torch.nn.Sequential(
+            torch.nn.Linear(
+                kwargs["hidden_features"], kwargs["hidden_features"],
+            ),
+            self.activation,
+            torch.nn.Linear(
+                kwargs["hidden_features"], out_features,
+            ),
         )
 
+        self.fc_log_sigma = torch.nn.Sequential(
+            torch.nn.Linear(
+                kwargs["hidden_features"], kwargs["hidden_features"],
+            ),
+            self.activation,
+            torch.nn.Linear(
+                kwargs["hidden_features"], out_features,
+            ),
+        )
 
     def forward(self, g, h, y=None):
         g = g.local_var()
-
-        h = self.fc_in(h)
-        h = self.activation(h)
-
-        for idx in range(self.depth):
-            h = getattr(self, f"layer{idx}")(g, h)
-            h = self.activation(h)
+        h = super().forward(g, h, )
 
         parallel = h.dim() == 3
         if parallel:
@@ -175,16 +197,22 @@ class GraphRegressionBronxModel(BronxModel):
         if parallel:
             h = h.swapaxes(0, 1)
 
-        if y is not None:
-            with pyro.plate("data", y.shape[0], device=h.device):
-                pyro.sample(
-                    "y",
-                    pyro.distributions.Normal(
-                        self.fc_mu(h), 
-                        self.fc_log_sigma(h).exp()
-                    ).to_event(1),
-                    obs=y,
-                )
-        return h
+        mu = self.fc_mu(h)
+        log_sigma = self.fc_log_sigma(h)
+
+        mu = mu * self.y_std + self.y_mean
+        sigma = log_sigma.exp() * self.y_std ** 2
+
+        # sigma = log_sigma.exp()
+
+        # if y is not None:
+        with pyro.plate("data", g.batch_size, device=h.device):
+            pyro.sample(
+                "y",
+                pyro.distributions.Normal(mu, sigma).to_event(1),
+                obs=y,
+            )
+        
+        return mu
 
         
