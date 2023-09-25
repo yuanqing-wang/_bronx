@@ -60,7 +60,7 @@ def get_graph(data):
 
 def run(args):
     pyro.clear_param_store()
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
     if args.seed > 0:
         torch.manual_seed(args.seed)
 
