@@ -253,8 +253,10 @@ class GraphClassificationBronxModel(BronxModel):
         with pyro.plate("data", g.batch_size, device=h.device):
             pyro.sample(
                 "y",
-                pyro.distributions.Bernoulli(h).to_event(1),
+                pyro.distributions.Bernoulli(probs=h).to_event(1),
                 obs=y,
             )
         
+        # print(((h - y).abs() < 0.5).float().mean())
+
         return h

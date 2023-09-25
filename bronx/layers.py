@@ -87,7 +87,6 @@ class BronxLayer(pyro.nn.PyroModule):
             self, 
             in_features, 
             out_features, 
-            edge_features=0,
             activation=torch.nn.SiLU(), 
             idx=0, 
             num_heads=4,
@@ -157,16 +156,6 @@ class BronxLayer(pyro.nn.PyroModule):
         g.apply_edges(
             dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
         )
-
-        if self.edge_features > 0:
-            mu_e = self.fc_mu_e(he)
-            log_sigma_e = self.fc_log_sigma_e(he)
-            mu_e = mu_e.reshape(*mu_e.shape[:-1], self.num_heads, -1)
-            log_sigma_e = log_sigma_e.reshape(
-                *log_sigma_e.shape[:-1], self.num_heads, -1
-            )
-            g.edata["mu"] = g.edata["mu"] + mu_e
-            g.edata["log_sigma"] = g.edata["log_sigma"] + log_sigma_e
 
         mu = g.edata["mu"]
         log_sigma = g.edata["log_sigma"] 
