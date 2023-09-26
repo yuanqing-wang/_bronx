@@ -141,7 +141,7 @@ class NodeClassificationBronxModel(BronxModel):
                     obs=y,
                 )
 
-        return h
+        return h 
 
 
 class GraphRegressionBronxModel(BronxModel):
