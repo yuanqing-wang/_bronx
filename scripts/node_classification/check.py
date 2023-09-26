@@ -41,7 +41,6 @@ def check(args):
             model = torch.load(results[0]["config"]["checkpoint"], map_location="cpu")
         model.eval()
 
-
         with torch.no_grad():
             predictive = pyro.infer.Predictive(
                 model,
