@@ -87,6 +87,7 @@ class BronxLayer(pyro.nn.PyroModule):
             self, 
             in_features, 
             out_features, 
+            edge_features=0,
             activation=torch.nn.SiLU(), 
             idx=0, 
             num_heads=4,
@@ -125,6 +126,7 @@ class BronxLayer(pyro.nn.PyroModule):
             t, adjoint=adjoint, physique=physique, gamma=gamma,
         )
 
+
         if norm:
             self.norm = torch.nn.LayerNorm(in_features)
         else:
@@ -156,12 +158,21 @@ class BronxLayer(pyro.nn.PyroModule):
             dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
         )
 
+        if self.edge_features > 0:
+            mu_e = self.fc_mu_e(he)
+            log_sigma_e = self.fc_log_sigma_e(he)
+            mu_e = mu_e.reshape(*mu_e.shape[:-1], self.num_heads, -1)
+            log_sigma_e = log_sigma_e.reshape(
+                *log_sigma_e.shape[:-1], self.num_heads, -1
+            )
+            g.edata["mu"] = g.edata["mu"] + mu_e
+            g.edata["log_sigma"] = g.edata["log_sigma"] + log_sigma_e
+
         mu = g.edata["mu"]
         log_sigma = g.edata["log_sigma"] 
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
-
 
         with pyro.plate(
             f"edges{self.idx}", g.number_of_edges(), device=g.device
@@ -180,8 +191,9 @@ class BronxLayer(pyro.nn.PyroModule):
         h = self.linear_diffusion(g, h, e)
         return h
 
-    def forward(self, g, h):
+    def forward(self, g, h, he=None):
         g = g.local_var()
+
 
         if self.node_prior:
             if self.norm:
