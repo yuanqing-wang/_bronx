@@ -131,32 +131,42 @@ def run(args):
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    swap_swa_sgd(svi.optim)
-    model.eval()
-    with torch.no_grad():
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+        # swap_swa_sgd(svi.optim)
+        model.eval()
+        with torch.no_grad():
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["train_mask"])[
+                "_RETURN"
+            ].mean(0)
+            y = g.ndata["label"][g.ndata["train_mask"]]
+            accuracy_tr = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["val_mask"]]
-        accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
 
-        y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
-            "_RETURN"
-        ].mean(0)
-        y = g.ndata["label"][g.ndata["test_mask"]]
-        accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
-            y_hat
-        )
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["val_mask"])[
+                "_RETURN"
+            ].mean(0)
+            y = g.ndata["label"][g.ndata["val_mask"]]
+            accuracy_vl = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
+
+            y_hat = predictive(g, g.ndata["feat"], mask=g.ndata["test_mask"])[
+                "_RETURN"
+            ].mean(0)
+            y = g.ndata["label"][g.ndata["test_mask"]]
+            accuracy_te = float((y_hat.argmax(-1) == y.argmax(-1)).sum()) / len(
+                y_hat
+            )
+
+            print(accuracy_tr, accuracy_vl, accuracy_te)
 
     print("ACCURACY,%.6f,%.6f" % (accuracy_vl, accuracy_te), flush=True)
     return accuracy_vl, accuracy_te
@@ -168,34 +178,33 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_features", type=int, default=32)
     parser.add_argument("--embedding_features", type=int, default=32)
     parser.add_argument("--activation", type=str, default="ELU")
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-4)
+    parser.add_argument("--learning_rate", type=float, default=1e-2)
+    parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--depth", type=int, default=1)
-    parser.add_argument("--num_samples", type=int, default=8)
-    parser.add_argument("--num_particles", type=int, default=8)
+    parser.add_argument("--num_samples", type=int, default=32)
+    parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--num_heads", type=int, default=4)
-    parser.add_argument("--sigma_factor", type=float, default=1.0)
+    parser.add_argument("--sigma_factor", type=float, default=5.0)
     parser.add_argument("--t", type=float, default=1.0)
     parser.add_argument("--optimizer", type=str, default="Adam")
-    parser.add_argument("--kl_scale", type=float, default=1e-5)
-    parser.add_argument("--n_epochs", type=int, default=50)
+    parser.add_argument("--kl_scale", type=float, default=1e-2)
+    parser.add_argument("--n_epochs", type=int, default=100)
     parser.add_argument("--adjoint", type=int, default=1)
     parser.add_argument("--physique", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
-    parser.add_argument("--dropout_in", type=float, default=0.0)
-    parser.add_argument("--dropout_out", type=float, default=0.0)
+    parser.add_argument("--dropout_in", type=float, default=0.5)
+    parser.add_argument("--dropout_out", type=float, default=0.5)
     parser.add_argument("--consistency_temperature", type=float, default=0.1)
-    parser.add_argument("--consistency_factor", type=float, default=1e-5)
-    parser.add_argument("--node_prior", type=int, default=0)
-    parser.add_argument("--norm", type=int, default=0)
+    parser.add_argument("--consistency_factor", type=float, default=1e-1)
+    parser.add_argument("--node_prior", type=int, default=1)
+    parser.add_argument("--norm", type=int, default=1)
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--swa_start", type=int, default=20)
     parser.add_argument("--swa_freq", type=int, default=5)
     parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=-1)
-    parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--split_index", type=int, default=-1)
     parser.add_argument("--edge_recover", default=0.0, type=float)
     args = parser.parse_args()

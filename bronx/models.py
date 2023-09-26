@@ -242,7 +242,7 @@ class GraphClassificationBronxModel(BronxModel):
             h = h.swapaxes(0, 1)
             
         g.ndata["h"] = h
-        h = dgl.sum_nodes(g, "h")
+        h = dgl.mean_nodes(g, "h")
 
         if parallel:
             h = h.swapaxes(0, 1)
