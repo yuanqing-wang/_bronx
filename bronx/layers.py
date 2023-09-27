@@ -30,7 +30,7 @@ class ODEFunc(torch.nn.Module):
         g = self.g.local_var()
         g.edata["e"] = e
         g.ndata["h"] = h
-        g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
+        g.update_all(fn.u_mul_e("h", "e", "m"), fn.mean("m", "h"))
         h = g.ndata["h"]
         # h = h.tanh()
         h = h - h0 * self.gamma
@@ -63,9 +63,12 @@ class LinearDiffusion(torch.nn.Module):
 
         h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
         # e = edge_softmax(g, e)
-        g.edata["e"] = e
-        g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
-        g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
+        g.edata["e"] = e * 2
+
+        # g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
+        # g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
+
+
         node_shape = h.shape
         if self.physique:
             self.odefunc.h0 = h.detach().clone()
