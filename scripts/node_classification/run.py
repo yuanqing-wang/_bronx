@@ -77,7 +77,7 @@ def run(args):
 
     model = NodeClassificationBronxModel(
         in_features=g.ndata["feat"].shape[-1],
-        out_features=g.ndata["label"].shape[-1],
+        out_features=args.num_heads, # g.ndata["label"].shape[-1],
         hidden_features=args.hidden_features,
         embedding_features=args.embedding_features,
         depth=args.depth,

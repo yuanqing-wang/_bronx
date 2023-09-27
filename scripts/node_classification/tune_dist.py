@@ -62,7 +62,7 @@ def experiment(args):
     param_space = {
         "data": args.data,
         "hidden_features": tune.randint(1, 8),
-        "embedding_features": tune.randint(2, 8),
+        # "embedding_features": tune.randint(2, 8),
         "num_heads": tune.randint(4, 32),
         "depth": 1, # tune.randint(1, 4),
         "learning_rate": tune.loguniform(1e-5, 1e-2),

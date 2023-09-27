@@ -155,13 +155,13 @@ class BronxLayer(pyro.nn.PyroModule):
             mu, log_sigma, k = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1), k.swapaxes(0, 1)
 
         g.ndata["mu"], g.ndata["log_sigma"], g.ndata["k"] = mu, log_sigma, k
-        g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu"))
+        g.apply_edges(dgl.function.u_add_v("k", "mu", "mu"))
         g.apply_edges(
-            dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
+            dgl.function.u_add_v("k", "log_sigma", "log_sigma")
         )
 
-        mu = g.edata["mu"]
-        log_sigma = g.edata["log_sigma"] 
+        mu = torch.nn.functional.leaky_relu(g.edata["mu"], 0.2)
+        log_sigma = torch.nn.functional.leaky_relu(g.edata["log_sigma"], 0.2)
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
