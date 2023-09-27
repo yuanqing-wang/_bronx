@@ -78,10 +78,12 @@ class LinearDiffusion(torch.nn.Module):
         x = self.integrator(self.odefunc, x, self.t, method="dopri5")
         h = x[:, :h.numel()]
         h = h.reshape(self.n_steps, *node_shape)
-        h = torch.movedim(h, 0, -1)
+        h, _ = h.max(0)
+        # h = torch.movedim(h, 0, -1)
         if parallel:
             h = h.swapaxes(0, 1)
-        h = h.flatten(-3, -1)
+        # h = h.flatten(-3, -1)
+        h = h.flatten(-2, -1)
         return h
 
 class BronxLayer(pyro.nn.PyroModule):

@@ -60,7 +60,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", type=str, default=".")
-    parser.add_argument("--first", type=int, default=16)
+    parser.add_argument("--first", type=int, default=4)
     parser.add_argument("--num_samples", type=int, default=32)
     args = parser.parse_args()
     check(args)
