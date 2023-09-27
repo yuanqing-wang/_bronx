@@ -97,6 +97,7 @@ def run(args):
         norm=bool(args.norm),
         node_prior=bool(args.node_prior),
         edge_recover=args.edge_recover,
+        n_steps=args.n_steps,
     )
  
     if torch.cuda.is_available():
@@ -179,17 +180,17 @@ if __name__ == "__main__":
     parser.add_argument("--sigma_factor", type=float, default=5.0)
     parser.add_argument("--t", type=float, default=5.0)
     parser.add_argument("--optimizer", type=str, default="Adam")
-    parser.add_argument("--kl_scale", type=float, default=1e-5)
+    parser.add_argument("--kl_scale", type=float, default=1e-8)
     parser.add_argument("--n_epochs", type=int, default=50)
     parser.add_argument("--adjoint", type=int, default=1)
     parser.add_argument("--physique", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
-    parser.add_argument("--dropout_in", type=float, default=0.0)
-    parser.add_argument("--dropout_out", type=float, default=0.0)
-    parser.add_argument("--consistency_temperature", type=float, default=0.1)
-    parser.add_argument("--consistency_factor", type=float, default=1e-5)
-    parser.add_argument("--node_prior", type=int, default=0)
+    parser.add_argument("--dropout_in", type=float, default=0.5)
+    parser.add_argument("--dropout_out", type=float, default=0.5)
+    parser.add_argument("--consistency_temperature", type=float, default=0.2)
+    parser.add_argument("--consistency_factor", type=float, default=1e-1)
+    parser.add_argument("--node_prior", type=int, default=1)
     parser.add_argument("--norm", type=int, default=0)
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
@@ -200,5 +201,6 @@ if __name__ == "__main__":
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--split_index", type=int, default=-1)
     parser.add_argument("--edge_recover", default=0.0, type=float)
+    parser.add_argument("--n_steps", default=2, type=int)
     args = parser.parse_args()
     run(args)

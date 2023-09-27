@@ -41,10 +41,11 @@ class ODEFunc(torch.nn.Module):
         return x
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, t, adjoint=False, physique=False, gamma=1.0):
+    def __init__(self, t, adjoint=False, physique=False, gamma=1.0, n_steps=2):
         super().__init__()
         self.odefunc = ODEFunc(gamma=gamma)
-        self.register_buffer("t", torch.tensor(t))
+        self.register_buffer("t", torch.linspace(0, t, n_steps))
+        self.n_steps = n_steps
         self.physique = physique
         if adjoint:
             self.integrator = odeint_adjoint
@@ -72,14 +73,15 @@ class LinearDiffusion(torch.nn.Module):
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
-        t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
+        # t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
         x = torch.cat([h.flatten(), g.edata["e"].flatten()])
-        x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
-        h, e = x[:h.numel()], x[h.numel():]
-        h = h.reshape(*node_shape)
+        x = self.integrator(self.odefunc, x, self.t, method="dopri5")
+        h = x[:, :h.numel()]
+        h = h.reshape(self.n_steps, *node_shape)
+        h = torch.movedim(h, 0, -1)
         if parallel:
             h = h.swapaxes(0, 1)
-        h = h.flatten(-2, -1)
+        h = h.flatten(-3, -1)
         return h
 
 class BronxLayer(pyro.nn.PyroModule):
@@ -99,6 +101,7 @@ class BronxLayer(pyro.nn.PyroModule):
             norm=False,
             dropout=0.0,
             node_prior=False,
+            n_steps=2,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -122,7 +125,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
         self.linear_diffusion = LinearDiffusion(
-            t, adjoint=adjoint, physique=physique, gamma=gamma,
+            t, adjoint=adjoint, physique=physique, gamma=gamma, n_steps=n_steps
         )
 
 

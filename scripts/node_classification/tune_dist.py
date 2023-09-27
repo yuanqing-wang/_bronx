@@ -91,6 +91,7 @@ def experiment(args):
         "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
         "seed": 2666,
         "k": 0,
+        "n_steps": tune.randint(2, 8),
     }
 
     tune_config = tune.TuneConfig(
