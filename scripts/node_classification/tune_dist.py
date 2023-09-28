@@ -61,9 +61,9 @@ def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
     param_space = {
         "data": args.data,
-        "hidden_features": tune.randint(1, 8),
-        "embedding_features": tune.randint(2, 8),
-        "num_heads": tune.randint(4, 32),
+        "hidden_features": tune.randint(4, 8),
+        "embedding_features": tune.randint(4, 8),
+        "num_heads": tune.randint(4, 16),
         "depth": 1, # tune.randint(1, 4),
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
@@ -78,7 +78,7 @@ def experiment(args):
         "norm": 0, # tune.choice([0, 1]),
         "gamma": tune.uniform(0.5, 1.0),
         "readout_depth": 1, # tune.randint(1, 4),
-        "kl_scale": tune.loguniform(1e-10, 1e-2),
+        "kl_scale": tune.loguniform(1e-6, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
         "consistency_factor": tune.loguniform(1e-2, 1.0),
