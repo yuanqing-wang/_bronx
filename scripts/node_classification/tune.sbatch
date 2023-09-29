@@ -1,8 +1,9 @@
 #!/bin/bash
-#SBATCH --time=03:59:00
-#SBATCH --mem=4GB
+#SBATCH --time=0:59:00
+#SBATCH --mem=20GB
 #SBATCH --job-name=tune
 #SBATCH --output=%A.out
-#SBATCH --gres=gpu:v100:1
+#SBATCH --gres=gpu:4
+#SBATCH --ntasks-per-node=4
 
-python tune.py
+python tune.py # --data CiteseerGraphDataset
