@@ -6,8 +6,7 @@ import ray
 from ray import tune, air, train
 from ray.tune.trainable import session
 from ray.tune.search import ConcurrencyLimiter
-from ray.tune.search.optuna import OptunaSearch
-from ray.tune.schedulers import ASHAScheduler
+from ray.tune.search.hyperopt import HyperOptSearch
 import os
 ray.init(num_cpus=os.cpu_count())
 LSF_COMMAND = "bsub -q gpuqueue -gpu " +\
@@ -56,6 +55,7 @@ def objective(args):
     output = lsf_submit(command)
     accuracy, accuracy_te = parse_output(output)
     session.report({"accuracy": accuracy, "accuracy_te": accuracy_te})
+    # return accuracy
 
 def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
@@ -69,21 +69,21 @@ def experiment(args):
         "weight_decay": tune.loguniform(1e-10, 1e-2),
         "num_samples": 4,
         "num_particles": 4,
-        "sigma_factor": tune.uniform(5.0, 15.0),
-        "t": tune.uniform(5.0, 15.0),
+        "sigma_factor": tune.uniform(1.0, 15.0),
+        "t": tune.uniform(1.0, 15.0),
         "optimizer": "Adam", # tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
         "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
         "physique": 1,
         "norm": 0, # tune.choice([0, 1]),
-        "gamma": tune.uniform(0.5, 1.0),
+        "gamma": 1.0,
         "readout_depth": 1, # tune.randint(1, 4),
-        "kl_scale": tune.loguniform(1e-10, 1e-2),
+        "kl_scale": tune.loguniform(1e-5, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
-        "consistency_factor": tune.loguniform(1e-2, 1.0),
+        "consistency_factor": tune.loguniform(0.01, 1.0),
         "consistency_temperature": tune.uniform(0.0, 0.5),
-        "n_epochs": tune.randint(50, 70),
+        "n_epochs": tune.randint(50, 100),
         "swa_start": tune.randint(10, 20),
         "swa_freq": tune.randint(5, 10),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
@@ -96,8 +96,11 @@ def experiment(args):
     tune_config = tune.TuneConfig(
         metric="_metric/accuracy",
         mode="max",
-        search_alg=ConcurrencyLimiter(OptunaSearch(), args.concurrent),
-        num_samples=5000,
+        search_alg=ConcurrencyLimiter(
+            HyperOptSearch(),
+            args.concurrent
+        ),
+        num_samples=10000,
     )
 
     run_config = air.RunConfig(
@@ -106,7 +109,7 @@ def experiment(args):
     )
 
     tuner = tune.Tuner(
-        objective,
+        tune.with_resources(objective, {"cpu": 0.01}),
         param_space=param_space,
         tune_config=tune_config,
         run_config=run_config,

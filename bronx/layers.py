@@ -187,7 +187,7 @@ class BronxLayer(pyro.nn.PyroModule):
         if self.node_prior:
             if self.norm:
                 h = self.norm(h)
-            h = self.dropout(h)
+            # h = self.dropout(h)
             mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
             src, dst = g.edges()
             mu = mu[..., dst, :]
