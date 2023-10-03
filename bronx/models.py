@@ -3,7 +3,10 @@ import torch
 import dgl
 import pyro
 from pyro import poutine
-from .layers import BronxLayer, NodeRecover, EdgeRecover, NeighborhoodRecover, ConsistencyRegularizer
+from .layers import (
+    BronxLayer, NodeRecover, EdgeRecover, 
+    NeighborhoodRecover, ConsistencyRegularizer,
+)
 from dgl.nn.pytorch import GraphConv
 
 class BronxModel(pyro.nn.PyroModule):
@@ -26,6 +29,7 @@ class BronxModel(pyro.nn.PyroModule):
             norm=False,
             node_prior=False,
             edge_recover=0.0,
+            neighborhood_recover=0.0,
         ):
         super().__init__()
         if embedding_features is None:
@@ -64,6 +68,13 @@ class BronxModel(pyro.nn.PyroModule):
             )
         else:
             self.edge_recover = None
+
+        if neighborhood_recover > 0:
+            self.neighborhood_recover = NeighborhoodRecover(
+                hidden_features, scale=neighborhood_recover,
+            )
+        else:
+            self.neighborhood_recover = None
 
         for idx in range(depth):
             layer = BronxLayer(
@@ -108,23 +119,25 @@ class BronxModel(pyro.nn.PyroModule):
             h = getattr(self, f"layer{idx}")(g, h)
         if self.edge_recover is not None:
             self.edge_recover(g, h)
+        if self.neighborhood_recover is not None:
+            self.neighborhood_recover(g, h)
         h = self.fc_out(h)
         return h
 
 class NodeClassificationBronxModel(BronxModel):
     def __init__(self, *args, **kwargs):
         temperature = kwargs.pop("consistency_temperature", 1.0)
-        factor = kwargs.pop("consistency_factor", 1.0)
+        consistency_factor = kwargs.pop("consistency_factor", 1.0)
+        
         super().__init__(*args, **kwargs)
         self.consistency_regularizer = ConsistencyRegularizer(
-            temperature=temperature, factor=factor,
+            temperature=temperature, factor=consistency_factor,
         )
-        
+
     def forward(self, g, h, y=None, mask=None):
-        h = super().forward(g, h, )
+        h = super().forward(g, h)
         h = h.softmax(-1)
         self.consistency_regularizer(h)
-
         if mask is not None:
             h = h[..., mask, :]
             if y is not None:

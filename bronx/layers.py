@@ -280,31 +280,6 @@ class EdgeRecover(pyro.nn.PyroModule):
                     obs=torch.zeros(g.number_of_edges(), device=g.device),
                 )
 
-class NeighborhoodRecover(pyro.nn.PyroModule):
-    def __init__(self, in_features, scale=1.0):
-        super().__init__()
-        self.fc_mu = torch.nn.Linear(in_features, in_features, bias=False)
-        self.fc_log_sigma = torch.nn.Linear(in_features, in_features, bias=False)
-        self.scale = scale
-
-    def forward(self, g, h):
-        g = g.local_var()
-        g = dgl.add_reverse_edges(g)
-        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
-        src, dst = g.edges()
-        mu, log_sigma = mu[..., src, :], log_sigma[..., src, :]
-        h = h[..., dst, :]
-
-        with pyro.poutine.scale(None, self.scale):
-            with pyro.plate("neighborhood_recover_plate", g.number_of_edges(), device=g.device):
-                pyro.sample(
-                    "neighborhood_recover",
-                    pyro.distributions.Normal(
-                        mu, 
-                        log_sigma.exp(),
-                    ).to_event(1),
-                    obs=h,
-                )
 
 class BatchedLSTM(torch.nn.LSTM):
     def forward(self, h):
@@ -319,6 +294,46 @@ class BatchedLSTM(torch.nn.LSTM):
             output, (h, c) = super().forward(h)
             h = h.squeeze(0)
             return h
+
+class NeighborhoodRecover(torch.nn.Module):
+    def __init__(self, in_features, scale=1.0, aggregators=["sum", "max"]):
+        super().__init__()
+        self.aggregators = aggregators
+        out_features = in_features * len(aggregators)
+        self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
+        self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
+        self.scale = scale
+
+    def forward(self, g, h):
+        g = g.local_var()
+        parallel = h.dim() == 3
+        if parallel:
+            h = h.swapaxes(0, 1)
+        g.ndata["h"] = h
+        for aggregator in self.aggregators:
+            g.update_all(
+                fn.copy_u("h", "m"), 
+                getattr(fn, aggregator)("m", "h_" + aggregator),
+            )
+        h_neighborhood = torch.cat(
+            [g.ndata["h_" + aggregator] for aggregator in self.aggregators], 
+            dim=-1,
+        )
+
+        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
+        if parallel:
+            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
+            h_neighborhood = h_neighborhood.swapaxes(0, 1)
+        with pyro.poutine.scale(None, self.scale):
+            with pyro.plate("neighborhood_recover_plate", h.shape[0], device=h.device):
+                pyro.sample(
+                    "neighborhood_recover",
+                    pyro.distributions.Normal(
+                        mu, 
+                        log_sigma.exp(),
+                    ).to_event(1),
+                    obs=h_neighborhood,
+                )
 
 class ConsistencyRegularizer(torch.nn.Module):
     def __init__(self, temperature, factor):
