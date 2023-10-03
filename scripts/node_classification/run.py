@@ -60,7 +60,7 @@ def get_graph(data):
 
 def run(args):
     pyro.clear_param_store()
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
     if args.seed > 0:
         torch.manual_seed(args.seed)
 
@@ -159,6 +159,8 @@ def run(args):
         )
 
     print("ACCURACY,%.6f,%.6f" % (accuracy_vl, accuracy_te), flush=True)
+    if len(args.checkpoint) > 0:
+        torch.save(model, args.checkpoint)
     return accuracy_vl, accuracy_te
 
 if __name__ == "__main__":
