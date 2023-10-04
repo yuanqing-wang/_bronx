@@ -102,27 +102,28 @@ def run(args):
                 y = y.to("cuda:0")
             model.train()
             loss = svi.step(g, g.ndata["h0"], y)
-    
-    _, g, y = next(iter(data_valid))
-    if torch.cuda.is_available():
-        g = g.to("cuda:0")
-        y = y.to("cuda:0")
+            print(loss)
+        
+        _, g, y = next(iter(data_valid))
+        if torch.cuda.is_available():
+            g = g.to("cuda:0")
+            y = y.to("cuda:0")
 
-    model.eval()
-    swap_swa_sgd(svi.optim)
-    with torch.no_grad():
+        model.eval()
+        # swap_swa_sgd(svi.optim)
+        with torch.no_grad():
 
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["h0"])["_RETURN"].mean(0)
-        rmse = float(((y_hat - y) ** 2).mean() ** 0.5)
-        print("RMSE: %.6f" % rmse, flush=True)
+            y_hat = predictive(g, g.ndata["h0"])["_RETURN"].mean(0)
+            rmse = float(((y_hat - y) ** 2).mean() ** 0.5)
+            print("RMSE: %.6f" % rmse, flush=True)
     return rmse
 
 if __name__ == "__main__":
@@ -130,20 +131,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="ESOL")
     parser.add_argument("--batch_size", type=int, default=-1)
-    parser.add_argument("--hidden_features", type=int, default=25)
-    parser.add_argument("--embedding_features", type=int, default=20)
+    parser.add_argument("--hidden_features", type=int, default=64)
+    parser.add_argument("--embedding_features", type=int, default=64)
     parser.add_argument("--activation", type=str, default="SiLU")
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--depth", type=int, default=3)
     parser.add_argument("--num_samples", type=int, default=64)
     parser.add_argument("--num_particles", type=int, default=4)
-    parser.add_argument("--num_heads", type=int, default=5)
+    parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--sigma_factor", type=float, default=2.0)
     parser.add_argument("--t", type=float, default=1.0)
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--kl_scale", type=float, default=1e-5)
-    parser.add_argument("--n_epochs", type=int, default=100)
+    parser.add_argument("--n_epochs", type=int, default=1000)
     parser.add_argument("--adjoint", type=int, default=0)
     parser.add_argument("--physique", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=1.0)

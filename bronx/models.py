@@ -172,20 +172,21 @@ class GraphRegressionBronxModel(BronxModel):
             h = h.swapaxes(0, 1)
             
         g.ndata["h"] = h
-        h = dgl.sum_nodes(g, "h")
+        h = dgl.mean_nodes(g, "h")
 
         if parallel:
             h = h.swapaxes(0, 1)
 
         mu = self.fc_mu(h)
         log_sigma = self.fc_log_sigma(h)
+        sigma = log_sigma.exp()
 
-        mu = mu * self.y_std + self.y_mean
-        sigma = log_sigma.exp() * self.y_std ** 2
+        # mu = mu * self.y_std + self.y_mean
+        # sigma = log_sigma.exp() * self.y_std ** 2
 
         # sigma = log_sigma.exp()
 
-        # if y is not None:
+        
         with pyro.plate("data", g.batch_size, device=h.device):
             pyro.sample(
                 "y",
