@@ -121,6 +121,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--concurrent", type=int, default=200)
+    parser.add_argument("--concurrent", type=int, default=100)
     args = parser.parse_args()
     experiment(args)
