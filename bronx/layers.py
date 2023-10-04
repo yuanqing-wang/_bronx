@@ -24,20 +24,28 @@ class ODEFunc(torch.nn.Module):
         self.register_buffer("gamma", torch.tensor(gamma))
         
     def forward(self, t, x):
-        h, e = x[:self.node_shape.numel()], x[self.node_shape.numel():]
-        h, e = h.reshape(*self.node_shape), e.reshape(*self.edge_shape)
+        h, v, e = (
+            x[:self.node_shape.numel()],
+            x[self.node_shape.numel():2*self.node_shape.numel()], 
+            x[2*self.node_shape.numel():],
+        )
+        h, v, e = (
+            h.reshape(*self.node_shape), 
+            v.reshape(*self.node_shape),
+            e.reshape(*self.edge_shape),
+        )
         h0 = h
+        v0 = v
         g = self.g.local_var()
         g.edata["e"] = e
         g.ndata["h"] = h
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
-        h = g.ndata["h"]
-        # h = h.tanh()
-        h = h - h0 * self.gamma
+        v = g.ndata["h"] - v0 * self.gamma - h0
         if self.h0 is not None:
-            h = h + self.h0
-        h, e = h.flatten(), e.flatten()
-        x = torch.cat([h, torch.zeros_like(e)])
+            v = v + self.h0
+        # h, v, e = h.flatten(), v.flatten(), e.flatten()
+
+        x = torch.cat([v0, v, torch.zeros_like(e)])
         return x
 
 class LinearDiffusion(torch.nn.Module):
@@ -73,9 +81,10 @@ class LinearDiffusion(torch.nn.Module):
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
         t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
-        x = torch.cat([h.flatten(), g.edata["e"].flatten()])
+        v = torch.zeros_like(h)
+        x = torch.cat([h.flatten(), v.flatten(), g.edata["e"].flatten()])
         x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
-        h, e = x[:h.numel()], x[h.numel():]
+        h, v, e = x[:h.numel()], x[h.numel():2*h.numel()], x[2*h.numel():]
         h = h.reshape(*node_shape)
         if parallel:
             h = h.swapaxes(0, 1)
