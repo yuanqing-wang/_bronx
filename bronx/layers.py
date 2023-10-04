@@ -32,6 +32,7 @@ class ODEFunc(torch.nn.Module):
         g.ndata["h"] = h
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
         h = g.ndata["h"]
+        # h = h.tanh()
         h = h - h0 * self.gamma
         if self.h0 is not None:
             h = h + self.h0
@@ -49,6 +50,7 @@ class LinearDiffusion(torch.nn.Module):
             self.integrator = odeint_adjoint
         else:
             self.integrator = odeint
+        
 
     def forward(self, g, h, e):
         g = g.local_var()
@@ -60,13 +62,13 @@ class LinearDiffusion(torch.nn.Module):
             e, h = e.swapaxes(0, 1), h.swapaxes(0, 1)
 
         h = h.reshape(*h.shape[:-1], e.shape[-2], -1)
-
+        # e = edge_softmax(g, e)
         g.edata["e"] = e
         g.update_all(fn.copy_e("e", "m"), fn.sum("m", "e_sum"))
         g.apply_edges(lambda edges: {"e": edges.data["e"] / edges.dst["e_sum"]})
         node_shape = h.shape
-        if self.physique is not None:
-            self.odefunc.h0 = h.clone().detach()
+        if self.physique:
+            self.odefunc.h0 = h.detach().clone()
         self.odefunc.node_shape = node_shape
         self.odefunc.edge_shape = g.edata["e"].shape
         self.odefunc.g = g
@@ -96,14 +98,18 @@ class BronxLayer(pyro.nn.PyroModule):
             physique=False,
             gamma=1.0,
             norm=False,
+            dropout=0.0,
+            node_prior=False,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
 
-        self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
-        self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+        if node_prior:
+            self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+            self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
+        self.node_prior = node_prior
 
         torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
@@ -111,7 +117,6 @@ class BronxLayer(pyro.nn.PyroModule):
 
         self.activation = activation
         self.idx = idx
-        self.norm = norm
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
@@ -121,19 +126,19 @@ class BronxLayer(pyro.nn.PyroModule):
             t, adjoint=adjoint, physique=physique, gamma=gamma,
         )
 
-        self.edge_features = edge_features
-        if self.edge_features > 0:
-            self.fc_mu_e = torch.nn.Linear(edge_features, out_features, bias=False)
-            self.fc_log_sigma_e = torch.nn.Linear(edge_features, out_features, bias=False)
-            torch.nn.init.constant_(self.fc_mu_e.weight, 1e-5)
-            torch.nn.init.constant_(self.fc_log_sigma_e.weight, 1e-5)
 
-    def guide(self, g, h, he=None):
+        if norm:
+            self.norm = torch.nn.LayerNorm(in_features)
+        else:
+            self.norm = None
+
+        self.dropout = torch.nn.Dropout(dropout)
+
+    def guide(self, g, h):
         g = g.local_var()
-        h0 = h
         if self.norm:
-            h = h - h.mean(-1, keepdims=True)
-            h = torch.nn.functional.normalize(h, dim=-1)
+            h = self.norm(h)
+        h = self.dropout(h)
         mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
 
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
@@ -169,49 +174,68 @@ class BronxLayer(pyro.nn.PyroModule):
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
-        if g.number_of_edges() > 0:
-            with pyro.plate(
-                f"edges{self.idx}", g.number_of_edges(), device=g.device
-            ):
-                with pyro.poutine.scale(None, self.kl_scale):
-                    e = pyro.sample(
-                        f"e{self.idx}",
-                        pyro.distributions.TransformedDistribution(
-                            pyro.distributions.Normal(
-                                mu,
-                                self.sigma_factor * log_sigma.exp(),
-                            ),
-                            pyro.distributions.transforms.SigmoidTransform(),
-                        ).to_event(2),
-                    )
-
-            h = self.linear_diffusion(g, h0, e)
+        with pyro.plate(
+            f"edges{self.idx}", g.number_of_edges(), device=g.device
+        ):
+            with pyro.poutine.scale(None, self.kl_scale):
+                e = pyro.sample(
+                    f"e{self.idx}",
+                    pyro.distributions.TransformedDistribution(
+                        pyro.distributions.Normal(
+                            mu,
+                            self.sigma_factor * log_sigma.exp(),
+                        ),
+                        pyro.distributions.transforms.SigmoidTransform(),
+                    ).to_event(2),
+                )
+        h = self.linear_diffusion(g, h, e)
         return h
 
     def forward(self, g, h, he=None):
         g = g.local_var()
-        mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
-        src, dst = g.edges()
-        mu = mu[..., dst, :]
-        log_sigma = log_sigma[..., dst, :]
-        mu, log_sigma = mu.unsqueeze(-1), log_sigma.unsqueeze(-1)
-        sigma = log_sigma.exp() * self.sigma_factor
-        if g.number_of_edges() > 0:
-            with pyro.plate(
-                f"edges{self.idx}", g.number_of_edges(), device=g.device
-            ):
-                with pyro.poutine.scale(None, self.kl_scale):
-                    e = pyro.sample(
-                        f"e{self.idx}",
-                        pyro.distributions.TransformedDistribution(
-                            pyro.distributions.Normal(
-                                mu, sigma,
-                            ),
-                            pyro.distributions.transforms.SigmoidTransform(),
-                        ).to_event(2),
-                    )
 
-            h = self.linear_diffusion(g, h, e)
+
+        if self.node_prior:
+            if self.norm:
+                h = self.norm(h)
+            h = self.dropout(h)
+            mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
+            src, dst = g.edges()
+            mu = mu[..., dst, :]
+            log_sigma = log_sigma[..., dst, :]
+            mu, log_sigma = mu.unsqueeze(-1), log_sigma.unsqueeze(-1)
+            sigma = log_sigma.exp() * self.sigma_factor
+
+        else:
+            mu = torch.zeros(
+                g.number_of_edges(),
+                self.num_heads,
+                1,
+                device=g.device,
+            )
+
+            sigma = self.sigma_factor * torch.ones(
+                g.number_of_edges(),
+                self.num_heads,
+                1,
+                device=g.device,
+            )
+
+        with pyro.plate(
+            f"edges{self.idx}", g.number_of_edges(), device=g.device
+        ):
+            with pyro.poutine.scale(None, self.kl_scale):
+                e = pyro.sample(
+                    f"e{self.idx}",
+                    pyro.distributions.TransformedDistribution(
+                        pyro.distributions.Normal(
+                            mu, sigma,
+                        ),
+                        pyro.distributions.transforms.SigmoidTransform(),
+                    ).to_event(2),
+                )
+
+        h = self.linear_diffusion(g, h, e)
         return h
 
 class NodeRecover(pyro.nn.PyroModule):
@@ -306,6 +330,24 @@ class BatchedLSTM(torch.nn.LSTM):
             output, (h, c) = super().forward(h)
             h = h.squeeze(0)
             return h
+
+class ConsistencyRegularizer(torch.nn.Module):
+    def __init__(self, temperature, factor):
+        super().__init__()
+        self.temperature = temperature
+        self.factor = factor
+
+    def forward(self, probs):
+        if probs.dim() == 2:
+            avg_probs = probs
+        else:
+            avg_probs = probs.mean(0)
+
+        sharpened_probs = avg_probs.pow(1.0 / self.temperature)
+        sharpened_probs = sharpened_probs / sharpened_probs.sum(-1, keepdims=True)
+        loss = (sharpened_probs - probs).pow(2).sum()
+        pyro.factor("consistency_regularizer", -loss * self.factor)
+        return loss
 
 
 
