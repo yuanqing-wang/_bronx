@@ -89,6 +89,7 @@ def experiment(args):
         "swa_lr": tune.loguniform(1e-5, 1e-1),
         "node_prior": 1, # tune.choice([0, 1]),
         "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
+        "neighborhood_recover": tune.loguniform(1e-6, 1e-3),
         "seed": 2666,
         "k": 0,
     }
