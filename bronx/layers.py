@@ -44,8 +44,7 @@ class ODEFunc(torch.nn.Module):
         if self.h0 is not None:
             v = v + self.h0
         # h, v, e = h.flatten(), v.flatten(), e.flatten()
-
-        x = torch.cat([v0, v, torch.zeros_like(e)])
+        x = torch.cat([v0.flatten(), v.flatten(), torch.zeros_like(e).flatten()])
         return x
 
 class LinearDiffusion(torch.nn.Module):
