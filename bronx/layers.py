@@ -40,7 +40,7 @@ class ODEFunc(torch.nn.Module):
         g.edata["e"] = e
         g.ndata["h"] = h
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
-        v = g.ndata["h"] - v0 * self.gamma - h0
+        v = g.ndata["h"].tanh() - v0 * self.gamma - h0
         if self.h0 is not None:
             v = v + self.h0
         # h, v, e = h.flatten(), v.flatten(), e.flatten()

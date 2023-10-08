@@ -81,7 +81,7 @@ def experiment(args):
         "kl_scale": tune.loguniform(1e-10, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
-        "consistency_factor": tune.loguniform(1e-2, 1.0),
+        "consistency_factor": tune.uniform(1e-2, 1.0),
         "consistency_temperature": tune.uniform(0.0, 0.5),
         "n_epochs": tune.randint(50, 70),
         "swa_start": tune.randint(10, 20),
