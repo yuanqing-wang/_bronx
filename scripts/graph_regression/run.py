@@ -95,7 +95,8 @@ def run(args):
     )
 
     import tqdm
-    for idx in tqdm.tqdm(range(args.n_epochs)):
+    # for idx in tqdm.tqdm(range(args.n_epochs)):
+    for idx in range(args.n_epochs):
         for _, g, y in data_train:
             if torch.cuda.is_available():
                 g = g.to("cuda:0")
@@ -103,15 +104,15 @@ def run(args):
             model.train()
             loss = svi.step(g, g.ndata["h0"], y)
     
+    model.eval()
+    swap_swa_sgd(svi.optim)
+
     _, g, y = next(iter(data_valid))
     if torch.cuda.is_available():
         g = g.to("cuda:0")
         y = y.to("cuda:0")
 
-    model.eval()
-    swap_swa_sgd(svi.optim)
     with torch.no_grad():
-
         predictive = pyro.infer.Predictive(
             model,
             guide=model.guide,
@@ -121,8 +122,26 @@ def run(args):
         )
 
         y_hat = predictive(g, g.ndata["h0"])["_RETURN"].mean(0)
-        rmse = float(((y_hat - y) ** 2).mean() ** 0.5)
-        print("RMSE: %.6f" % rmse, flush=True)
+        rmse_vl = float(((y_hat - y) ** 2).mean() ** 0.5)
+
+    _, g, y = next(iter(data_test))
+    if torch.cuda.is_available():
+        g = g.to("cuda:0")
+        y = y.to("cuda:0")
+
+    with torch.no_grad():
+        predictive = pyro.infer.Predictive(
+            model,
+            guide=model.guide,
+            num_samples=args.num_samples,
+            parallel=True,
+            return_sites=["_RETURN"],
+        )
+
+        y_hat = predictive(g, g.ndata["h0"])["_RETURN"].mean(0)
+        rmse_te = float(((y_gat - y) ** 2).mean() ** 0.5)
+    
+    print("RMSE: %.6f,%.6f" % (rmse_vl, rmse_te), flush=True)
     return rmse
 
 if __name__ == "__main__":

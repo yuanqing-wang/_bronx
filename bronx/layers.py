@@ -15,13 +15,14 @@ from torchdiffeq import odeint_adjoint
 from torchdiffeq import odeint
 
 class ODEFunc(torch.nn.Module):
-    def __init__(self, gamma):
+    def __init__(self, gamma, activation):
         super().__init__()
         self.g = None
         self.edge_shape = None
         self.node_shape = None
         self.h0 = None
         self.register_buffer("gamma", torch.tensor(gamma))
+        self.activation = activation
         
     def forward(self, t, x):
         h, v, e = (
@@ -40,7 +41,7 @@ class ODEFunc(torch.nn.Module):
         g.edata["e"] = e
         g.ndata["h"] = h
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
-        v = g.ndata["h"].tanh() - v0 * self.gamma - h0
+        v = self.activation(g.ndata["h"]) - v0 * self.gamma - h0
         if self.h0 is not None:
             v = v + self.h0
         # h, v, e = h.flatten(), v.flatten(), e.flatten()
@@ -48,9 +49,9 @@ class ODEFunc(torch.nn.Module):
         return x
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, t, adjoint=False, physique=False, gamma=1.0):
+    def __init__(self, t, adjoint=False, physique=False, gamma=1.0, activation=lambda x: x):
         super().__init__()
-        self.odefunc = ODEFunc(gamma=gamma)
+        self.odefunc = ODEFunc(gamma=gamma, activation=activation)
         self.register_buffer("t", torch.tensor(t))
         self.physique = physique
         if adjoint:
@@ -130,7 +131,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
         self.linear_diffusion = LinearDiffusion(
-            t, adjoint=adjoint, physique=physique, gamma=gamma,
+            t, adjoint=adjoint, physique=physique, gamma=gamma, activation=activation,
         )
 
 

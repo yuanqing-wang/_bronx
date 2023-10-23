@@ -6,15 +6,15 @@ import ray
 from ray import tune, air, train
 from ray.tune.trainable import session
 from ray.tune.search import ConcurrencyLimiter
-from ray.tune.search.hyperopt import HyperOptSearch
+from ray.tune.search.optuna import OptunaSearch
 from ray.tune.schedulers import ASHAScheduler
 import os
 ray.init(num_cpus=os.cpu_count())
 LSF_COMMAND = "bsub -q gpuqueue -gpu " +\
-"\"num=1:j_exclusive=yes\" -R \"rusage[mem=5] span[ptile=1]\" -W 0:05 -Is "
+"\"num=1:j_exclusive=yes\" -R \"rusage[mem=5] span[ptile=1]\" -W 0:20 -Is "
 
 PYTHON_COMMAND =\
-"python /data/chodera/wangyq/bronx/scripts/node_classification/run.py"
+"python /data/chodera/wangyq/bronx/scripts/graph_regression/run.py"
 
 def args_to_command(args):
     command = LSF_COMMAND + "\""
@@ -35,9 +35,9 @@ def lsf_submit(command):
 
 def parse_output(output):
     line = output.split("\n")[-1]
-    if "ACCURACY" not in line:
+    if "RMSE" not in line:
         print(output, flush=True)
-        return 0.0, 0.0
+        return 99.9, 99.9
     _, accuracy_vl, accuracy_te = line.split(",")
     return float(accuracy_vl), float(accuracy_te)
     
@@ -54,8 +54,8 @@ def objective(args):
     args["checkpoint"] = checkpoint
     command = args_to_command(args)
     output = lsf_submit(command)
-    accuracy, accuracy_te = parse_output(output)
-    session.report({"accuracy": accuracy, "accuracy_te": accuracy_te})
+    rmse, rmse_te = parse_output(output)
+    session.report({"accuracy": rmse, "accuracy_te": rmse_te})
 
 def experiment(args):
     name = datetime.now().strftime("%m%d%Y%H%M%S")
@@ -71,8 +71,8 @@ def experiment(args):
         "num_particles": 4,
         "sigma_factor": tune.uniform(5.0, 15.0),
         "t": tune.uniform(5.0, 15.0),
-        "optimizer": tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
-        "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
+        "optimizer": "Adam", # tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
+        "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
         "physique": 1,
         "norm": 0, # tune.choice([0, 1]),
@@ -81,23 +81,19 @@ def experiment(args):
         "kl_scale": tune.loguniform(1e-10, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
-        "consistency_factor": tune.uniform(1e-2, 1.0),
-        "consistency_temperature": tune.uniform(0.0, 0.5),
-        "n_epochs": tune.randint(50, 70),
-        "swa_start": tune.randint(10, 20),
+        "n_epochs": 500,
+        "swa_start": 100,
         "swa_freq": tune.randint(5, 10),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
-        "node_prior": tune.choice([0, 1]),
-        "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
         "seed": 2666,
         "k": 0,
     }
 
     tune_config = tune.TuneConfig(
-        metric="_metric/accuracy",
-        mode="max",
-        search_alg=ConcurrencyLimiter(HyperOptSearch(), args.concurrent),
-        num_samples=5000,
+        metric="_metric/rmse",
+        mode="min",
+        search_alg=ConcurrencyLimiter(OptunaSearch(), args.concurrent),
+        num_samples=100,
     )
 
     run_config = air.RunConfig(
@@ -117,7 +113,7 @@ def experiment(args):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, default="CoraGraphDataset")
-    parser.add_argument("--concurrent", type=int, default=200)
+    parser.add_argument("--data", type=str, default="ESOL")
+    parser.add_argument("--concurrent", type=int, default=10)
     args = parser.parse_args()
     experiment(args)
