@@ -97,6 +97,7 @@ def run(args):
         norm=bool(args.norm),
         node_prior=bool(args.node_prior),
         edge_recover=args.edge_recover,
+        step_size=args.step_size,
     )
  
     if torch.cuda.is_available():
@@ -200,5 +201,6 @@ if __name__ == "__main__":
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--split_index", type=int, default=-1)
     parser.add_argument("--edge_recover", default=0.0, type=float)
+    parser.add_argument("--step_size", default=0.1, type=float)
     args = parser.parse_args()
     run(args)

@@ -49,7 +49,15 @@ class ODEFunc(torch.nn.Module):
         return x
 
 class LinearDiffusion(torch.nn.Module):
-    def __init__(self, t, adjoint=False, physique=False, gamma=1.0, activation=lambda x: x):
+    def __init__(
+            self, 
+            t, 
+            adjoint=False, 
+            physique=False, 
+            gamma=1.0, 
+            activation=lambda x: x,
+            step_size=0.1,
+        ):
         super().__init__()
         self.odefunc = ODEFunc(gamma=gamma, activation=activation)
         self.register_buffer("t", torch.tensor(t))
@@ -58,6 +66,7 @@ class LinearDiffusion(torch.nn.Module):
             self.integrator = odeint_adjoint
         else:
             self.integrator = odeint
+        self.step_size = step_size
         
 
     def forward(self, g, h, e):
@@ -83,7 +92,8 @@ class LinearDiffusion(torch.nn.Module):
         t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
         v = torch.zeros_like(h)
         x = torch.cat([h.flatten(), v.flatten(), g.edata["e"].flatten()])
-        x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
+        # x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
+        x = self.integrator(self.odefunc, x, t, method="rk4", options={"step_size": self.step_size})[-1]
         h, v, e = x[:h.numel()], x[h.numel():2*h.numel()], x[2*h.numel():]
         h = h.reshape(*node_shape)
         if parallel:
@@ -108,6 +118,7 @@ class BronxLayer(pyro.nn.PyroModule):
             norm=False,
             dropout=0.0,
             node_prior=False,
+            step_size=0.1,
         ):
         super().__init__()
         self.fc_mu = torch.nn.Linear(in_features, out_features, bias=False)
@@ -132,6 +143,7 @@ class BronxLayer(pyro.nn.PyroModule):
         self.kl_scale = kl_scale
         self.linear_diffusion = LinearDiffusion(
             t, adjoint=adjoint, physique=physique, gamma=gamma, activation=activation,
+            step_size=step_size,
         )
 
 

@@ -26,6 +26,7 @@ class BronxModel(pyro.nn.PyroModule):
             norm=False,
             node_prior=False,
             edge_recover=0.0,
+            step_size=0.1,
         ):
         super().__init__()
         if embedding_features is None:
@@ -81,6 +82,7 @@ class BronxModel(pyro.nn.PyroModule):
                 norm=norm,
                 dropout=dropout_in,
                 node_prior=node_prior,
+                step_size=step_size,
             )
             
             if idx > 0:

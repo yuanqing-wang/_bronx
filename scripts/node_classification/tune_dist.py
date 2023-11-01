@@ -64,7 +64,7 @@ def experiment(args):
         "hidden_features": tune.randint(1, 8),
         "embedding_features": tune.randint(2, 8),
         "num_heads": tune.randint(4, 32),
-        "depth": 1, # tune.randint(1, 4),
+        "depth": tune.randint(1, 4),
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
         "num_samples": 4,
@@ -74,6 +74,7 @@ def experiment(args):
         "optimizer": tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
         "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
+        "step_size": tune.uniform(0.01, 0.5),
         "physique": 1,
         "norm": 0, # tune.choice([0, 1]),
         "gamma": tune.uniform(0.5, 1.0),
@@ -83,7 +84,7 @@ def experiment(args):
         "dropout_out": tune.uniform(0.0, 1.0),
         "consistency_factor": tune.uniform(1e-2, 1.0),
         "consistency_temperature": tune.uniform(0.0, 0.5),
-        "n_epochs": tune.randint(50, 70),
+        "n_epochs": tune.randint(50, 100),
         "swa_start": tune.randint(10, 20),
         "swa_freq": tune.randint(5, 10),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
@@ -97,7 +98,7 @@ def experiment(args):
         metric="_metric/accuracy",
         mode="max",
         search_alg=ConcurrencyLimiter(HyperOptSearch(), args.concurrent),
-        num_samples=5000,
+        num_samples=50000,
     )
 
     run_config = air.RunConfig(
