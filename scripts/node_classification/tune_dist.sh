@@ -3,5 +3,5 @@
 #BSUB -W 23:59
 #BSUB -n 8
 
-python tune_dist.py --data CoraGraphDataset
+python tune_dist.py --data PubmedGraphDataset
 

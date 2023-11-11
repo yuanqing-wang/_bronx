@@ -74,7 +74,8 @@ class LinearDiffusion(torch.nn.Module):
         self.odefunc.g = g
         t = torch.tensor([0.0, self.t], device=h.device, dtype=h.dtype)
         x = torch.cat([h.flatten(), g.edata["e"].flatten()])
-        x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
+        # x = self.integrator(self.odefunc, x, t, method="dopri5")[-1]
+        x = self.integrator(self.odefunc, x, t, method="rk4", options={"step_size": 0.1})[-1]
         h, e = x[:h.numel()], x[h.numel():]
         h = h.reshape(*node_shape)
         if parallel:
