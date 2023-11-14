@@ -9,7 +9,6 @@ from bronx.models import NodeClassificationBronxModel
 from ray.air import session
 import warnings
 warnings.filterwarnings("ignore")
-from bronx.optim import SWA, swap_swa_sgd
 
 def get_graph(data):
     from dgl.data import (
@@ -104,22 +103,21 @@ def run(args):
         model = model.cuda()
         g = g.to("cuda:0")
 
-    optimizer = SWA(
+    scheduler = pyro.optim.CosineAnnealingLR(
         {
-            "base": getattr(torch.optim, args.optimizer),
-            "base_args": {"lr": args.learning_rate, "weight_decay": args.weight_decay},
-            "swa_args": {
-                "swa_start": args.swa_start, 
-                "swa_freq": args.swa_freq, 
-                "swa_lr": args.swa_lr,
+            "optimizer": getattr(torch.optim, args.optimizer),
+            "optim_args": {
+                "lr": args.learning_rate, 
+                "weight_decay": args.weight_decay
             },
-        }
+            "T_max": args.n_epochs,
+        },
     )
     
     svi = pyro.infer.SVI(
         model,
         model.guide,
-        optimizer,
+        scheduler,
         loss=pyro.infer.TraceMeanField_ELBO(
             num_particles=args.num_particles, vectorize_particles=True
         ),
@@ -131,7 +129,6 @@ def run(args):
             g, g.ndata["feat"], y=g.ndata["label"], mask=g.ndata["train_mask"]
         )
 
-    swap_swa_sgd(svi.optim)
     model.eval()
     with torch.no_grad():
         predictive = pyro.infer.Predictive(
@@ -193,9 +190,6 @@ if __name__ == "__main__":
     parser.add_argument("--norm", type=int, default=0)
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
-    parser.add_argument("--swa_start", type=int, default=20)
-    parser.add_argument("--swa_freq", type=int, default=5)
-    parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=-1)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--split_index", type=int, default=-1)
