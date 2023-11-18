@@ -71,7 +71,7 @@ def experiment(args):
         "num_particles": 4,
         "sigma_factor": tune.uniform(1.0, 15.0),
         "t": tune.uniform(1.0, 15.0),
-        "optimizer": tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
+        "optimizer": "Adam", # tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
         "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
         "physique": tune.choice([0, 1]),
