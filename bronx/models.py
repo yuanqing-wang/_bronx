@@ -17,7 +17,7 @@ class BronxModel(pyro.nn.PyroModule):
             sigma_factor=1.0,
             kl_scale=1.0,
             t=1.0,
-            alpha=0.1,
+            alpha=1.0,
             adjoint=False,
             physique=False,
             gamma=1.0,
@@ -51,11 +51,6 @@ class BronxModel(pyro.nn.PyroModule):
             torch.nn.Linear(hidden_features, out_features, bias=False)
         )
         self.fc_out = torch.nn.Sequential(*fc_out)
-
-        self.alpha = alpha
-        self.log_alpha = torch.nn.Parameter(
-            torch.ones(hidden_features) * math.log(alpha)
-        )
         self.activation = activation
         self.depth = depth
 
@@ -79,16 +74,17 @@ class BronxModel(pyro.nn.PyroModule):
                 adjoint=adjoint,
                 physique=physique,
                 gamma=gamma,
+                alpha=alpha,
                 norm=norm,
                 dropout=dropout_in,
                 node_prior=node_prior,
                 step_size=step_size,
             )
-            
+            ''' 
             if idx > 0:
                 layer.fc_mu = self.layer0.fc_mu
                 layer.fc_log_sigma = self.layer0.fc_log_sigma
-
+            '''
             setattr(
                 self,
                 f"layer{idx}",

@@ -11,7 +11,7 @@ from ray.tune.schedulers import ASHAScheduler
 import os
 ray.init(num_cpus=os.cpu_count())
 LSF_COMMAND = "bsub -q gpuqueue -gpu " +\
-"\"num=1:j_exclusive=yes\" -R \"rusage[mem=5] span[ptile=1]\" -W 0:05 -Is "
+"\"num=1:j_exclusive=yes\" -R \"rusage[mem=5] span[ptile=1]\" -W 0:10 -Is "
 
 PYTHON_COMMAND =\
 "python /data/chodera/wangyq/bronx/scripts/node_classification/run.py"
@@ -64,20 +64,21 @@ def experiment(args):
         "hidden_features": tune.randint(1, 8),
         "embedding_features": tune.randint(2, 8),
         "num_heads": tune.randint(4, 32),
-        "depth": tune.randint(1, 4),
+        "depth": 1, # tune.randint(1, 4),
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
-        "num_samples": 4,
-        "num_particles": 4,
+        "num_samples": 32,
+        "num_particles": 8,
         "sigma_factor": tune.uniform(5.0, 15.0),
         "t": tune.uniform(5.0, 15.0),
-        "optimizer": tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
-        "activation": tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
+        "optimizer": "Adam", # tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
+        "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
         "step_size": tune.uniform(0.01, 0.5),
         "physique": 1,
-        "norm": 0, # tune.choice([0, 1]),
-        "gamma": tune.uniform(0.5, 1.0),
+        "norm": tune.choice([0, 1]),
+        "gamma": tune.uniform(0.0, 1.0),
+        "alpha": tune.uniform(0.0, 1.0),
         "readout_depth": 1, # tune.randint(1, 4),
         "kl_scale": tune.loguniform(1e-10, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
@@ -88,7 +89,7 @@ def experiment(args):
         "swa_start": tune.randint(10, 20),
         "swa_freq": tune.randint(5, 10),
         "swa_lr": tune.loguniform(1e-5, 1e-1),
-        "node_prior": tune.choice([0, 1]),
+        "node_prior": 1, # tune.choice([0, 1]),
         "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
         "seed": 2666,
         "k": 0,

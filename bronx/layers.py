@@ -15,13 +15,14 @@ from torchdiffeq import odeint_adjoint
 from torchdiffeq import odeint
 
 class ODEFunc(torch.nn.Module):
-    def __init__(self, gamma, activation):
+    def __init__(self, gamma, alpha, activation):
         super().__init__()
         self.g = None
         self.edge_shape = None
         self.node_shape = None
         self.h0 = None
         self.register_buffer("gamma", torch.tensor(gamma))
+        self.register_buffer("alpha", torch.tensor(alpha))
         self.activation = activation
         
     def forward(self, t, x):
@@ -41,7 +42,7 @@ class ODEFunc(torch.nn.Module):
         g.edata["e"] = e
         g.ndata["h"] = h
         g.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
-        v = self.activation(g.ndata["h"]) - v0 * self.gamma - h0
+        v = self.activation(g.ndata["h"]) - v0 * self.alpha - h0 * self.gamma
         if self.h0 is not None:
             v = v + self.h0
         # h, v, e = h.flatten(), v.flatten(), e.flatten()
@@ -55,11 +56,12 @@ class LinearDiffusion(torch.nn.Module):
             adjoint=False, 
             physique=False, 
             gamma=1.0, 
+            alpha=1.0,
             activation=lambda x: x,
             step_size=0.1,
         ):
         super().__init__()
-        self.odefunc = ODEFunc(gamma=gamma, activation=activation)
+        self.odefunc = ODEFunc(gamma=gamma, alpha=alpha, activation=activation)
         self.register_buffer("t", torch.tensor(t))
         self.physique = physique
         if adjoint:
@@ -115,6 +117,7 @@ class BronxLayer(pyro.nn.PyroModule):
             adjoint=False,
             physique=False,
             gamma=1.0,
+            alpha=1.0,
             norm=False,
             dropout=0.0,
             node_prior=False,
@@ -142,8 +145,8 @@ class BronxLayer(pyro.nn.PyroModule):
         self.sigma_factor = sigma_factor
         self.kl_scale = kl_scale
         self.linear_diffusion = LinearDiffusion(
-            t, adjoint=adjoint, physique=physique, gamma=gamma, activation=activation,
-            step_size=step_size,
+            t, adjoint=adjoint, physique=physique, gamma=gamma, alpha=alpha,
+            activation=activation, step_size=step_size,
         )
 
 

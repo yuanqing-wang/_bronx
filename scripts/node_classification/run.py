@@ -90,6 +90,7 @@ def run(args):
         activation=getattr(torch.nn, args.activation)(),
         physique=args.physique,
         gamma=args.gamma,
+        alpha=args.alpha,
         dropout_in=args.dropout_in,
         dropout_out=args.dropout_out,
         consistency_temperature=args.consistency_temperature,
@@ -126,6 +127,7 @@ def run(args):
         ),
     )
     
+    import tqdm
     for idx in range(args.n_epochs):
         model.train()
         loss = svi.step(
@@ -174,8 +176,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--depth", type=int, default=1)
-    parser.add_argument("--num_samples", type=int, default=8)
-    parser.add_argument("--num_particles", type=int, default=8)
+    parser.add_argument("--num_samples", type=int, default=16)
+    parser.add_argument("--num_particles", type=int, default=16)
     parser.add_argument("--num_heads", type=int, default=4)
     parser.add_argument("--sigma_factor", type=float, default=5.0)
     parser.add_argument("--t", type=float, default=5.0)
@@ -185,6 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--adjoint", type=int, default=1)
     parser.add_argument("--physique", type=int, default=1)
     parser.add_argument("--gamma", type=float, default=1.0)
+    parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
