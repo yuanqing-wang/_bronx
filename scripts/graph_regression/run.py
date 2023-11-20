@@ -70,32 +70,29 @@ def run(args):
         data_valid, batch_size=len(data_valid),
     )
 
-    optimizer = SWA(
+    scheduler = pyro.optim.ReduceLROnPlateau(
         {
-            "base": getattr(torch.optim, args.optimizer),
-            "base_args": {
-                "lr": args.learning_rate / batch_size, 
+            "optimizer": getattr(torch.optim, args.optimizer),
+            "optim_args": {
+                "lr": args.learning_rate, 
                 "weight_decay": args.weight_decay
             },
-            "swa_args": {
-                "swa_start": args.swa_start, 
-                "swa_freq": args.swa_freq, 
-                "swa_lr": args.swa_lr,
-            },
-        }
+            "factor": args.lr_factor,
+            "patience": args.patience,
+            "mode": "min",
+        },
     )
 
     svi = pyro.infer.SVI(
         model,
         model.guide,
-        optimizer,
+        scheduler,
         loss=pyro.infer.TraceMeanField_ELBO(
             num_particles=args.num_particles, vectorize_particles=True
         ),
     )
 
-    import tqdm
-    for idx in tqdm.tqdm(range(args.n_epochs)):
+    for idx in range(args.n_epochs):
         for _, g, y in data_train:
             if torch.cuda.is_available():
                 g = g.to("cuda:0")
@@ -103,26 +100,27 @@ def run(args):
             model.train()
             loss = svi.step(g, g.ndata["h0"], y)
     
-    _, g, y = next(iter(data_valid))
-    if torch.cuda.is_available():
-        g = g.to("cuda:0")
-        y = y.to("cuda:0")
+        _, g, y = next(iter(data_valid))
+        if torch.cuda.is_available():
+            g = g.to("cuda:0")
+            y = y.to("cuda:0")
 
-    model.eval()
-    swap_swa_sgd(svi.optim)
-    with torch.no_grad():
+        model.eval()
+        with torch.no_grad():
 
-        predictive = pyro.infer.Predictive(
-            model,
-            guide=model.guide,
-            num_samples=args.num_samples,
-            parallel=True,
-            return_sites=["_RETURN"],
-        )
+            predictive = pyro.infer.Predictive(
+                model,
+                guide=model.guide,
+                num_samples=args.num_samples,
+                parallel=True,
+                return_sites=["_RETURN"],
+            )
 
-        y_hat = predictive(g, g.ndata["h0"])["_RETURN"].mean(0)
-        rmse = float(((y_hat - y) ** 2).mean() ** 0.5)
-        print("RMSE: %.6f" % rmse, flush=True)
+            y_hat = predictive(g, g.ndata["h0"])["_RETURN"].mean(0)
+            rmse = float(((y_hat - y) ** 2).mean() ** 0.5)
+        scheduler.step(rmse)
+        print(rmse)
+
     return rmse
 
 if __name__ == "__main__":
@@ -130,12 +128,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="ESOL")
     parser.add_argument("--batch_size", type=int, default=-1)
-    parser.add_argument("--hidden_features", type=int, default=25)
+    parser.add_argument("--hidden_features", type=int, default=100)
     parser.add_argument("--embedding_features", type=int, default=20)
     parser.add_argument("--activation", type=str, default="SiLU")
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
-    parser.add_argument("--depth", type=int, default=3)
+    parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--num_samples", type=int, default=64)
     parser.add_argument("--num_particles", type=int, default=4)
     parser.add_argument("--num_heads", type=int, default=5)
@@ -143,14 +141,11 @@ if __name__ == "__main__":
     parser.add_argument("--t", type=float, default=1.0)
     parser.add_argument("--optimizer", type=str, default="AdamW")
     parser.add_argument("--kl_scale", type=float, default=1e-5)
-    parser.add_argument("--n_epochs", type=int, default=100)
+    parser.add_argument("--n_epochs", type=int, default=1000)
     parser.add_argument("--adjoint", type=int, default=0)
     parser.add_argument("--physique", type=int, default=0)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--readout_depth", type=int, default=1)
-    parser.add_argument("--swa_start", type=int, default=20)
-    parser.add_argument("--swa_freq", type=int, default=10)
-    parser.add_argument("--swa_lr", type=float, default=1e-2)
     parser.add_argument("--dropout_in", type=float, default=0.0)
     parser.add_argument("--dropout_out", type=float, default=0.0)
     parser.add_argument("--norm", type=int, default=1)
@@ -158,5 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--seed", type=int, default=2666)
+    parser.add_argument("--lr_factor", type=float, default=0.5)
+    parser.add_argument("--patience", type=int, default=10)
     args = parser.parse_args()
     run(args)
