@@ -5,7 +5,7 @@ from run import run
 import ray
 from ray import tune, air, train
 from ray.tune.trainable import session
-from ray.tune.search import ConcurrencyLimiter
+from ray.tune.search import ConcurrencyLimiter, Repeater
 from ray.tune.search.hyperopt import HyperOptSearch
 import os
 ray.init(num_cpus=os.cpu_count())
@@ -94,10 +94,10 @@ def experiment(args):
         metric="_metric/accuracy",
         mode="max",
         search_alg=ConcurrencyLimiter(
-            HyperOptSearch(),
+            Repeater(HyperOptSearch(), repeat=3),
             args.concurrent
         ),
-        num_samples=10000,
+        num_samples=3000,
     )
 
     run_config = air.RunConfig(
