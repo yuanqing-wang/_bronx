@@ -34,7 +34,7 @@ def experiment(args):
         "hidden_features": tune.randint(1, 8),
         "embedding_features": tune.randint(2, 8),
         "num_heads": tune.randint(4, 32),
-        "depth": 1, # tune.randint(1, 4),
+        "depth": 1,
         "learning_rate": tune.loguniform(1e-5, 1e-2),
         "weight_decay": tune.loguniform(1e-10, 1e-2),
         "num_samples": 4,
@@ -44,26 +44,23 @@ def experiment(args):
         "optimizer": "Adam", # tune.choice(["RMSprop", "Adam", "AdamW", "Adamax", "SGD", "Adagrad"]),
         "activation": "ELU", # tune.choice(["Tanh", "SiLU", "ELU", "Sigmoid", "ReLU"]),
         "adjoint": 1, # tune.choice([0, 1]),
-        "physique": 1,
-        "norm": 0, # tune.choice([0, 1]),
-        "gamma": 1.0, # tune.uniform(0.0, 1.0),
+        "physique": tune.choice([0, 1]),
+        "norm": tune.choice([0, 1]),
+        "gamma": 1, # tune.uniform(0, 1),
         "readout_depth": 1, # tune.randint(1, 4),
         "kl_scale": tune.loguniform(1e-5, 1e-2),
         "dropout_in": tune.uniform(0.0, 1.0),
         "dropout_out": tune.uniform(0.0, 1.0),
-        "consistency_factor": tune.loguniform(1e-2, 1.0),
-        "consistency_temperature": tune.uniform(0.0, 1.0),
-        "n_epochs": 100,
-        "swa_start": tune.randint(20, 30),
-        "swa_freq": tune.randint(5, 10),
-        "swa_lr": tune.loguniform(1e-5, 1e-1),
-        "node_prior": 1, # tune.choice([0, 1]),
+        "consistency_factor": tune.loguniform(0.01, 1.0),
+        "consistency_temperature": tune.uniform(0.0, 0.5),
+        "n_epochs": tune.randint(50, 100),
+        "node_prior": tune.choice([0, 1]),
         "edge_recover": 0.0, # tune.loguniform(1e-5, 1e-1),
         "seed": 2666,
-        "split_index": 0,
         "k": 0,
+        "split_index": -1,
         "patience": 10,
-        "checkpoint": "",
+        "lr_factor": 0.5,
     }
 
     tune_config = tune.TuneConfig(
@@ -75,7 +72,7 @@ def experiment(args):
 
     run_config = air.RunConfig(
         name=name,
-        storage_path=args.data,
+        # storage_path=args.data,
         verbose=0,
     )
 
@@ -91,6 +88,6 @@ def experiment(args):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, default="CornellDataset")
+    parser.add_argument("--data", type=str, default="CoraGraphDataset")
     args = parser.parse_args()
     experiment(args)

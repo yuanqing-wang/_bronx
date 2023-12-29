@@ -1,10 +1,12 @@
 import os
 import glob
 import json
+from re import S
 import pandas as pd
 import torch
 import pyro
 import dgl
+from types import SimpleNamespace
 
 def check(args):
     results = []
@@ -34,6 +36,15 @@ def check(args):
 
 
     if args.rerun:
+        from run import run
+        config = results[0]["config"]
+        config["split_index"] = -1
+        config["lr_factor"] = 0.5
+        config["patience"] = 10
+        config = SimpleNamespace(**config)
+        accuracy_vl, accuracy_te = run(config)
+
+    if args.reevaluate:
         if torch.cuda.is_available():
             model = torch.load(results[0]["config"]["checkpoint"])
             g = g.to("cuda:0")
