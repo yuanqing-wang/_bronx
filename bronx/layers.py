@@ -106,11 +106,6 @@ class BronxLayer(pyro.nn.PyroModule):
         self.fc_log_sigma = torch.nn.Linear(in_features, out_features, bias=False)
         self.fc_k = torch.nn.Linear(in_features, out_features, bias=False)
 
-        if node_prior:
-            self.fc_mu_prior = torch.nn.Linear(in_features, num_heads, bias=False)
-            self.fc_log_sigma_prior = torch.nn.Linear(in_features, num_heads, bias=False)
-        self.node_prior = node_prior
-
         torch.nn.init.constant_(self.fc_k.weight, 1e-5)
         torch.nn.init.constant_(self.fc_log_sigma.weight, 1e-5)
         torch.nn.init.constant_(self.fc_mu.weight, 1e-5) 
@@ -139,91 +134,72 @@ class BronxLayer(pyro.nn.PyroModule):
         if self.norm:
             h = self.norm(h)
         h = self.dropout(h)
-        mu, log_sigma, k = self.fc_mu(h), self.fc_log_sigma(h), self.fc_k(h)
+        mu, log_sigma = self.fc_mu(h), self.fc_log_sigma(h)
 
         mu = mu.reshape(*mu.shape[:-1], self.num_heads, -1)
         log_sigma = log_sigma.reshape(
             *log_sigma.shape[:-1], self.num_heads, -1
         )
-        k = k.reshape(*k.shape[:-1], self.num_heads, -1)
 
         parallel = h.dim() == 3
 
         if parallel:
-            mu, log_sigma, k = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1), k.swapaxes(0, 1)
+            mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
         g.ndata["mu"], g.ndata["log_sigma"], g.ndata["k"] = mu, log_sigma, k
-        g.apply_edges(dgl.function.u_dot_v("k", "mu", "mu"))
-        g.apply_edges(
-            dgl.function.u_dot_v("k", "log_sigma", "log_sigma")
-        )
-
-        mu = g.edata["mu"]
-        log_sigma = g.edata["log_sigma"] 
 
         if parallel:
             mu, log_sigma = mu.swapaxes(0, 1), log_sigma.swapaxes(0, 1)
 
         with pyro.plate(
-            f"edges{self.idx}", g.number_of_edges(), device=g.device
+            f"nodes{self.idx}", g.number_of_nodes(), device=g.device
         ):
             with pyro.poutine.scale(None, self.kl_scale):
-                e = pyro.sample(
-                    f"e{self.idx}",
-                    pyro.distributions.TransformedDistribution(
-                        pyro.distributions.Normal(
-                            mu,
-                            self.sigma_factor * log_sigma.exp(),
-                        ),
-                        pyro.distributions.transforms.SigmoidTransform(),
-                    ).to_event(2),
+                pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        mu, self.sigma_factor * log_sigma.exp(),
+                    ),
                 )
+
+        k, q = self.fc_k(h), self.fc_q(h)
+        k, q = k.reshape(*k.shape[:-1], self.num_heads, -1), q.reshape(
+            *q.shape[:-1], self.num_heads, -1
+        )
+
+        g.ndata["k"], g.ndata["q"] = k, q
+        g.apply_edges(fn.u_mul_v("k", "q", "e"))
+        e = g.edata["e"]
         h = self.linear_diffusion(g, h, e)
         return h
 
     def forward(self, g, h, he=None):
         g = g.local_var()
 
+        mu = torch.zeros(
+            g.number_of_nodes(),
+            self.num_heads,
+            1,
+            device=g.device,
+        )
 
-        if self.node_prior:
-            if self.norm:
-                h = self.norm(h)
-            # h = self.dropout(h)
-            mu, log_sigma = self.fc_mu_prior(h), self.fc_log_sigma_prior(h)
-            src, dst = g.edges()
-            mu = mu[..., dst, :]
-            log_sigma = log_sigma[..., dst, :]
-            mu, log_sigma = mu.unsqueeze(-1), log_sigma.unsqueeze(-1)
-            sigma = log_sigma.exp() * self.sigma_factor
-
-        else:
-            mu = torch.zeros(
-                g.number_of_edges(),
-                self.num_heads,
-                1,
-                device=g.device,
-            )
-
-            sigma = self.sigma_factor * torch.ones(
-                g.number_of_edges(),
-                self.num_heads,
-                1,
-                device=g.device,
-            )
+        sigma = self.sigma_factor * torch.ones(
+            g.number_of_nodes(),
+            self.num_heads,
+            1,
+            device=g.device,
+        )
 
         with pyro.plate(
-            f"edges{self.idx}", g.number_of_edges(), device=g.device
+            f"nodes{self.idx}", g.number_of_nodes(), device=g.device
         ):
             with pyro.poutine.scale(None, self.kl_scale):
-                e = pyro.sample(
-                    f"e{self.idx}",
-                    pyro.distributions.TransformedDistribution(
-                        pyro.distributions.Normal(
-                            mu, sigma,
-                        ),
-                        pyro.distributions.transforms.SigmoidTransform(),
-                    ).to_event(2),
-                )
+                h = pyro.sample(
+                    f"h{self.idx}",
+                    pyro.distributions.Normal(
+                        mu, sigma,
+                    ),
+                ).to_event(2),
 
         h = self.linear_diffusion(g, h, e)
         return h
